@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:alpine
+    container_name: retell_redis
+    restart: always
+
+  api:
+    build: .
+    container_name: retell_api
+    depends_on:
+      - redis
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./credentials:/app/credentials
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - WHATSAPP_TOKEN=TU_TOKEN_DE_META_AQUI
+      - WHATSAPP_PHONE_ID=TU_PHONE_ID_DE_META_AQUI

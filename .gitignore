@@ -1,0 +1,17 @@
+# --- ARCHIVOS DE SISTEMA Y PYTHON ---
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.idea/
+.vscode/
+
+# --- SECRETOS Y CREDENCIALES (CRÍTICO) ---
+.env
+.DS_Store
+
+# Ignorar todo lo que esté dentro de la carpeta credentials...
+credentials/*
+
+# ...EXCEPTO el archivo .gitkeep (para que la carpeta vacía sí se suba)
+!credentials/.gitkeep
