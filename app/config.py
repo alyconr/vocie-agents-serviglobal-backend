@@ -16,7 +16,7 @@ TENANTS = {
         "creds_file": "credentials/client_demo.json", # Nombre de tu archivo JSON
         
         # IDs de los Google Sheets (Saca esto de la URL del navegador)
-        "sheet_inventory_id": "1l899tXvUkIKWhi4kJR9RESgXqzZNh5Yc",
+        "sheet_inventory_id": "1f-pIMvtz7N7SVsnM4MveXAjAxzrb-b6XIEQfnfOVpnw",
         "sheet_crm_id": "1EbTnCXR2qzJSyykpjGtIwrz196voa8lcBZ-vc5ITh3U",
         
         "calendar_id": "primary",
