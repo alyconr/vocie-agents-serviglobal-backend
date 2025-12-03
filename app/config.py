@@ -11,7 +11,7 @@ GLOBAL_WA_PHONE_ID = os.getenv("WHATSAPP_PHONE_ID")
 
 TENANTS = {
     # REEMPLAZA ESTE ID CON EL QUE TE DE RETELL EN SU DASHBOARD
-    "agent_89e9f56cb7d25e9f1da5e38d45": { 
+    "agent_agent_TESTING": { 
         "name": "Inmobiliaria Demo",
         "creds_file": "credentials/client_demo.json", # Nombre de tu archivo JSON
         
@@ -20,7 +20,7 @@ TENANTS = {
         "sheet_crm_id": "1EbTnCXR2qzJSyykpjGtIwrz196voa8lcBZ-vc5ITh3U",
         
         "calendar_id": "primary",
-        "inventory_range": "inventario!A:Z",
+        "inventory_range": "inventario!A:ZZ",
         "timezone": "America/Bogota",
         
         # DATOS DEL DUEÑO (TÚ)
