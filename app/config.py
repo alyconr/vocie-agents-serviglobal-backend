@@ -26,6 +26,6 @@ TENANTS = {
         # DATOS DEL DUEÑO (TÚ)
         "owner_phone": "573106666709",  # Tu celular para recibir alertas
         "owner_email": "alyconr@hotmail.com",
-        "appointment_buffer_hours": 4
+        "appointment_buffer_hours": 1
     }
 }

@@ -88,7 +88,7 @@ async def create_event_and_lock(agent_id: str, data: dict):
         # Fallback si ya viene con offset
         start_dt = datetime.fromisoformat(data['fecha_hora_inicio'])
 
-    buffer_hours = tenant.get('appointment_buffer_hours', 2)
+    buffer_hours = tenant.get('appointment_buffer_hours', 2) 
     end_dt = start_dt + timedelta(hours=buffer_hours)
 
     # 2. VERIFICACIÓN FINAL DE CONFLICTO (Double Check)
