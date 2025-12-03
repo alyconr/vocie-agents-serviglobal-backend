@@ -19,7 +19,7 @@ TENANTS = {
         "sheet_inventory_id": "1f-pIMvtz7N7SVsnM4MveXAjAxzrb-b6XIEQfnfOVpnw",
         "sheet_crm_id": "1EbTnCXR2qzJSyykpjGtIwrz196voa8lcBZ-vc5ITh3U",
         
-        "calendar_id": "primary",
+        "calendar_id": "alyconr473@gmail.com",
         "inventory_range": "inventario!A:ZZ",
         "timezone": "America/Bogota",
         
