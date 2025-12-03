@@ -11,7 +11,7 @@ GLOBAL_WA_PHONE_ID = os.getenv("WHATSAPP_PHONE_ID")
 
 TENANTS = {
     # REEMPLAZA ESTE ID CON EL QUE TE DE RETELL EN SU DASHBOARD
-    "agent_agent_TESTING": { 
+    "agent_TESTING": { 
         "name": "Inmobiliaria Demo",
         "creds_file": "credentials/client_demo.json", # Nombre de tu archivo JSON
         
