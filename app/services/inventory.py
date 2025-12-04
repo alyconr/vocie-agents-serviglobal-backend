@@ -129,7 +129,7 @@ async def search_inventory(agent_id: str, args: dict):
         
         # --- FASE 3: SELECCIÓN DE RESPUESTA ---
         # Definir qué columnas mostrar según lo que pidió el usuario
-        campos_comunes = ['barrio', 'habitaciones', 'area_construida_m2', 'ciudad']
+        campos_comunes = ['barrio', 'habitaciones', 'area_construida_m2', 'ciudad', 'asesor_nombre']
         
         if operacion_usuario.lower() == 'arriendo':
             campos_precio = ['canon_mensual_cop', 'valor_admin_cop']

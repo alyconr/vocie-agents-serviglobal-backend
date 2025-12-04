@@ -105,11 +105,20 @@ async def create_event_and_lock(agent_id: str, data: dict):
         return False # Retorna Falso para que el Main.py le diga al usuario que no se pudo
 
     # 3. Crear Evento
+    descripcion_evento = f"""
+    Cliente: {data['cliente_nombre']}
+    Teléfono: {data['cliente_telefono']}
+    Propiedad de interés: {data.get('propiedad_interes')}
+    -------------------------
+    ASESOR ASIGNADO: {data.get('asesor_nombre', 'Por asignar')}
+    """
+    
     event = {
-        'summary': f"CITA: {data['cliente_nombre']}",
-        'description': f"Tel: {data['cliente_telefono']}\nInterés: {data.get('propiedad_interes')}",
-        'start': {'dateTime': start_dt.isoformat(), 'timeZone': 'America/Bogota'},
-        'end': {'dateTime': end_dt.isoformat(), 'timeZone': 'America/Bogota'},
+        'summary': f"CITA: {data['cliente_nombre']} - {data.get('propiedad_interes', 'General')}",
+        'description': descripcion_evento,
+        'start': {'dateTime': start_dt.isoformat(), 'timeZone': tenant['timezone']},
+        'end': {'dateTime': end_dt.isoformat(), 'timeZone': tenant['timezone']},
+        # Recordatorio: 'attendees' lo quitamos para evitar error de permisos en cuentas @gmail
     }
     
     try:

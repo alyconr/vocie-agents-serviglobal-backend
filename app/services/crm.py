@@ -44,6 +44,7 @@ async def log_lead_bg(agent_id: str, data: dict):
             data.get('cliente_nombre', 'Desconocido'),
             data.get('cliente_telefono', 'No provisto'),
             data.get('propiedad_interes', 'General'),
+            data.get('asesor_nombre', 'General'),
             clasificacion,
             estado
         ]
@@ -53,13 +54,13 @@ async def log_lead_bg(agent_id: str, data: dict):
         # 5. Insertar la fila al final (Append)
         service.spreadsheets().values().append(
             spreadsheetId=tenant['sheet_crm_id'],
-            range="Leads!A:G", # IMPORTANTE: La pestaña debe llamarse 'Leads'
+            range="Leads!A:H", # IMPORTANTE: La pestaña debe llamarse 'Leads'
             valueInputOption="USER_ENTERED",
             insertDataOption="INSERT_ROWS",
             body=body
         ).execute()
         
-        print(f"✅ Lead guardado exitosamente en CRM: {data.get('cliente_nombre')}")
+        print(f"✅ Lead guardado exitosamente en CRM: {data.get('cliente_nombre', )}, Asesor: {data.get('asesor_nombre')}")
 
     except Exception as e:
         print(f"❌ CRITICAL ERROR CRM: No se pudo guardar el lead.")
