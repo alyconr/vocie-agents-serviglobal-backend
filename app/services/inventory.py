@@ -18,7 +18,8 @@ async def search_inventory(agent_id: str, args: dict):
     if cached_json:
         try:
             df = pd.read_json(io.StringIO(cached_json), orient='records')
-            if 'precio_total_cop' not in df.columns: # Validación básica
+            # Validación básica para saber si la caché es de la versión nueva
+            if 'precio_total_cop' not in df.columns and 'canon_mensual_cop' not in df.columns:
                 df = None 
         except Exception:
             df = None
@@ -29,13 +30,13 @@ async def search_inventory(agent_id: str, args: dict):
             service = get_service('sheets', 'v4', tenant['creds_file'])
             result = service.spreadsheets().values().get(
                 spreadsheetId=tenant['sheet_inventory_id'], 
-                range=tenant['inventory_range']
+                range=tenant['inventory_range'] # Asegúrate de usar A:ZZ en config
             ).execute()
             
             rows = result.get('values', [])
             if not rows: return "El inventario está vacío."
             
-            # Buscar header
+            # Buscar header dinámicamente
             header_idx = 0
             for i, row in enumerate(rows[:5]):
                 row_str = str(row).lower()
@@ -43,15 +44,16 @@ async def search_inventory(agent_id: str, args: dict):
                     header_idx = i
                     break
             
+            # Crear DataFrame con el header correcto
             df = pd.DataFrame(rows[header_idx + 1:], columns=rows[header_idx])
 
             # --- NORMALIZACIÓN DE COLUMNAS ---
             df.columns = df.columns.astype(str).str.strip().str.lower()
             df.columns = df.columns.str.replace(' ', '_').str.replace('.', '')
             
-            # RENOMBRADO INTELIGENTE (Separando Venta de Arriendo)
+            # RENOMBRADO INTELIGENTE
             for col in df.columns:
-                if 'parqueadero' in col: continue # Ignorar columnas de parqueadero
+                if 'parqueadero' in col: continue # Ignorar columnas confusas
                 
                 # 1. Identificar Tipo de Operación
                 if 'operacion' in col or 'modalidad' in col:
@@ -69,8 +71,10 @@ async def search_inventory(agent_id: str, args: dict):
                 elif 'administracion' in col or 'admin' in col: 
                     df.rename(columns={col: 'valor_admin_cop'}, inplace=True)
 
+            # ELIMINAR DUPLICADOS (Por seguridad)
+            df = df.loc[:, ~df.columns.duplicated()]
+
             # --- LIMPIEZA NUMÉRICA ---
-            # Función helper para limpiar dinero
             def clean_money(val):
                 return pd.to_numeric(str(val).replace('$', '').replace('.', '').replace(',', '').replace(' ', ''), errors='coerce')
 
@@ -81,9 +85,9 @@ async def search_inventory(agent_id: str, args: dict):
                 df['canon_mensual_cop'] = df['canon_mensual_cop'].apply(clean_money)
                 
             if 'valor_admin_cop' in df.columns:
-                df['valor_admin_cop'] = df['valor_admin_cop'].apply(clean_money).fillna(0) # Si es NaN, es 0
+                df['valor_admin_cop'] = df['valor_admin_cop'].apply(clean_money).fillna(0)
 
-            # Guardar en Redis
+            # Guardar en Redis (TTL 5 min)
             await redis_client.setex(cache_key, 300, df.to_json(orient='records'))
 
         except Exception as e:
@@ -94,29 +98,23 @@ async def search_inventory(agent_id: str, args: dict):
     try:
         results = df.copy()
 
-        # 1. FILTRO TIPO DE OPERACIÓN (Vital)
-        operacion_usuario = args.get('tipo_operacion', 'Venta') # Default a Venta si no especifican
+        # 1. FILTRO TIPO DE OPERACIÓN
+        operacion_usuario = args.get('tipo_operacion', 'Venta') 
         
         if 'tipo_operacion' in results.columns:
-            # Filtro flexible (contiene "Venta" o "Arriendo")
             results = results[results['tipo_operacion'].astype(str).str.contains(operacion_usuario, case=False, na=False)]
 
-        # 2. FILTRO PRESUPUESTO (Depende de la operación)
+        # 2. FILTRO PRESUPUESTO
         presupuesto = args.get('presupuesto_max')
-        
         if presupuesto:
             presupuesto = float(presupuesto)
             
             if operacion_usuario.lower() == 'arriendo':
-                # Lógica Arriendo: Canon + Admin <= Presupuesto
                 if 'canon_mensual_cop' in results.columns:
-                    # Crear columna temporal de costo total mensual
                     val_admin = results['valor_admin_cop'] if 'valor_admin_cop' in results.columns else 0
                     results['costo_mensual_total'] = results['canon_mensual_cop'] + val_admin
-                    
                     results = results[results['costo_mensual_total'] <= presupuesto]
             else:
-                # Lógica Venta: Precio Total <= Presupuesto
                 if 'precio_total_cop' in results.columns:
                     results = results[results['precio_total_cop'].notna()]
                     results = results[results['precio_total_cop'] <= presupuesto]
@@ -128,8 +126,7 @@ async def search_inventory(agent_id: str, args: dict):
         if results.empty: return f"No encontré propiedades en {operacion_usuario} con esos criterios."
         
         # --- FASE 3: SELECCIÓN DE RESPUESTA ---
-        # Definir qué columnas mostrar según lo que pidió el usuario
-        campos_comunes = ['barrio', 'habitaciones', 'area_construida_m2', 'ciudad', 'asesor_nombre']
+        campos_comunes = ['barrio', 'habitaciones', 'area_construida_m2', 'ciudad', 'asesor_nombre', 'direccion']
         
         if operacion_usuario.lower() == 'arriendo':
             campos_precio = ['canon_mensual_cop', 'valor_admin_cop']
