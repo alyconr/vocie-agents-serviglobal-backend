@@ -18,29 +18,31 @@ async def retell_webhook(payload: RetellPayload, bg_tasks: BackgroundTasks):
 
     if payload.name == "check_calendar_availability":
         fecha = payload.args.get('fecha')
+        cal_id = payload.args.get('asesor_calendar_id') # <--- ID Específico
+        
         if not fecha:
-            return {"result": "¿Para qué fecha te gustaría revisar?"}
-        return {"result": await calendar.check_availability(payload.agent_id, fecha)}
+            return {"result": "¿Para qué fecha?"}
+            
+        return {"result": await calendar.check_availability(payload.agent_id, fecha, cal_id)}
 
     if payload.name == "book_appointment_and_notify":
         if not payload.args.get('cliente_telefono'):
             return {"result": "Necesito confirmar tu número de WhatsApp."}
             
-        # INTENTO DE AGENDAMIENTO
         success = await calendar.create_event_and_lock(payload.agent_id, payload.args)
         
         if success:
             bg_tasks.add_task(notifications.notify_all_parties, payload.agent_id, payload.args)
             bg_tasks.add_task(crm.log_lead_bg, payload.agent_id, payload.args)
-            return {"result": "Listo, cita agendada y confirmación enviada."}
+            return {"result": "Listo, cita agendada."}
         else:
-            # FALLO: Sugerir alternativas
             try:
                 full_date = payload.args.get('fecha_hora_inicio', '')
                 date_only = full_date.split('T')[0]
-                alternativas = await calendar.check_availability(payload.agent_id, date_only)
-                return {"result": f"Ese horario ya está ocupado. {alternativas} ¿Alguna te sirve?"}
+                cal_id = payload.args.get('asesor_calendar_id')
+                alternativas = await calendar.check_availability(payload.agent_id, date_only, cal_id)
+                return {"result": f"Horario ocupado. {alternativas}"}
             except:
-                return {"result": "Ese horario ya está ocupado. ¿Te sirve otra hora?"}
+                return {"result": "Horario ocupado. ¿Miramos otro?"}
 
     return {"result": "Función no reconocida."}
