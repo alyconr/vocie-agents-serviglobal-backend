@@ -1,0 +1,50 @@
+name: Deploy to AWS Production
+
+on:
+  push:
+    branches:
+      - main  
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+
+    - name: Copy files via SCP
+      uses: appleboy/scp-action@master
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        source: "." 
+        target: "/home/ubuntu/retell-backend"
+        rm: false    # No borra lo que ya estaba (útil para logs)
+
+  
+    - name: Execute remote commands via SSH
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          cd /home/ubuntu/retell-backend
+          
+          # A. Reconstruir el archivo .env con el secreto de GitHub
+          echo "${{ secrets.ENV_FILE }}" > .env
+          
+          # B. Reconstruir la carpeta de credenciales y el JSON
+          mkdir -p credentials
+          echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials/client_demo.json
+          
+          # C. Reiniciar Docker para aplicar cambios
+          # Bajamos y subimos para asegurar que tome cambios de configuración
+          sudo docker compose down
+          sudo docker compose up -d --build
+          
+          # D. Limpieza de imágenes viejas (para no llenar el disco)
+          sudo docker image prune -f
