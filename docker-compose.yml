@@ -17,7 +17,7 @@ services:
       # Configuración de Certificados (Let's Encrypt)
       - "--certificatesresolvers.myresolver.acme.httpchallenge=true"
       - "--certificatesresolvers.myresolver.acme.httpchallenge.entrypoint=web"
-      - "--certificatesresolvers.myresolver.acme.email=admin@tudominio.com" # <--- TU EMAIL
+      - "--certificatesresolvers.myresolver.acme.email=admin@serviglobal.co" # <--- TU EMAIL
       - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
     ports:
       - "80:80"
@@ -45,7 +45,7 @@ services:
     labels:
       - "traefik.enable=true"
       # CAMBIA ESTO POR TU SUBDOMINIO REAL
-      - "traefik.http.routers.api.rule=Host(`api.tudominio.com`)" 
+      - "traefik.http.routers.api.rule=Host(`demoinmobiliaria.serviglobal.co`)" 
       - "traefik.http.routers.api.entrypoints=websecure"
       - "traefik.http.routers.api.tls.certresolver=myresolver"
       - "traefik.http.services.api.loadbalancer.server.port=8000"
