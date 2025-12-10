@@ -127,4 +127,3 @@ async def search_inventory(agent_id: str, args: dict):
     except Exception as e:
         print(f"❌ Error filtrando: {e}")
         return "Hubo un error procesando tu búsqueda."
-```
