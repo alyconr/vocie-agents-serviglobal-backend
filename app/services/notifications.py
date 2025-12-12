@@ -39,7 +39,7 @@ async def notify_all_parties(agent_id: str, data: dict):
     propiedad = data.get('propiedad_interes', 'Propiedad')
     cliente_nombre = data.get('cliente_nombre', 'Cliente')
 
-    # --- 2. ENVIAR WHATSAPP (Como antes) ---
+    # --- 2. ENVIAR WHATSAPP ---
     if token and phone_id:
         # Al Cliente
         if data.get('cliente_telefono'):
@@ -49,7 +49,7 @@ async def notify_all_parties(agent_id: str, data: dict):
                 params=[cliente_nombre, fecha_humana],
                 token=token, phone_id=phone_id
             )
-        # Al Asesor (Dueño de la inmobiliaria por ahora, o al asesor si tuvieramos su WA)
+        # Al Asesor
         if tenant.get('owner_phone'):
             await send_whatsapp(
                 to=tenant['owner_phone'],
@@ -58,12 +58,10 @@ async def notify_all_parties(agent_id: str, data: dict):
                 token=token, phone_id=phone_id
             )
 
-    # --- 3. ENVIAR CORREOS ELECTRÓNICOS (NUEVO) 
-    # Asunto del correo
+    # --- 3. ENVIAR CORREOS ELECTRÓNICOS ---
     asunto = f"Confirmación Cita: {propiedad} - {fecha_humana}"
     
     # Cuerpo del mensaje (HTML simple)
-    
     mensaje_html = f"""
     <h2>Hola {cliente_nombre},</h2>
     <p>Tu cita ha sido confirmada exitosamente.</p>
@@ -73,18 +71,15 @@ async def notify_all_parties(agent_id: str, data: dict):
         <li><strong>Asesor:</strong> {data.get('asesor_nombre', 'Asignado')}</li>
     </ul>
     <p>Nos vemos pronto.<br>Equipo {tenant['name']}</p>
-    
     """
 
     # Enviar al Cliente
-    
     if cliente_email and '@' in cliente_email:
         send_email_smtp(to_email=cliente_email, subject=asunto, body_html=mensaje_html)
 
     # Enviar al Asesor (Copia)
     if asesor_email and '@' in asesor_email and 'group.calendar' not in asesor_email:
         asunto_asesor = f"🔔 NUEVA CITA: {cliente_nombre} - {fecha_humana}"
-        # CORRECCIÓN: Se corrigió el cierre de comillas triples """ (antes tenía "")
         mensaje_asesor = f"""
         <h3>Nueva Cita Agendada</h3>
         <ul>
@@ -95,12 +90,10 @@ async def notify_all_parties(agent_id: str, data: dict):
             <li><strong>Fecha:</strong> {fecha_humana}</li>
         </ul>
         """
-        
         send_email_smtp(to_email=asesor_email, subject=asunto_asesor, body_html=mensaje_asesor)
 
 
 async def send_whatsapp(to: str, template: str, params: list, token: str, phone_id: str):
-    # ... (Misma lógica de WhatsApp que tenías antes) ...
     url = f"https://graph.facebook.com/v17.0/{phone_id}/messages"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     to = to.replace('+', '').replace(' ', '')
@@ -117,18 +110,17 @@ async def send_whatsapp(to: str, template: str, params: list, token: str, phone_
 def send_email_smtp(to_email, subject, body_html):
     """
     Envía correo usando servidor SMTP (Gmail, Outlook, AWS SES).
-    Requiere variables de entorno.
+    Maneja puertos vacíos de forma segura.
     """
-    # 1. Extracción Segura del Host
     smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
     
-    # 2. Extracción Segura del Puerto (Corrección del Error)
+    # --- CORRECCIÓN CRÍTICA: Manejo seguro del puerto ---
     port_env = os.getenv("SMTP_PORT")
     try:
-        # Si existe y no está vacío, lo convertimos. Si falla, usamos 587.
+        # Si existe y tiene texto, convertir. Si es cadena vacía o None, usar 587.
         smtp_port = int(port_env) if port_env and port_env.strip() else 587
     except ValueError:
-        print(f"⚠️ Puerto SMTP inválido ('{port_env}'). Usando puerto 587 por defecto.")
+        print(f"⚠️ Puerto SMTP inválido ('{port_env}'). Usando 587.")
         smtp_port = 587
 
     smtp_user = os.getenv("SMTP_EMAIL")     
