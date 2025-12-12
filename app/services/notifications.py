@@ -121,7 +121,7 @@ def send_email_smtp(to_email, subject, body_html):
     """
     smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(os.getenv("SMTP_PORT", 587))
-    smtp_user = os.getenv("SMTP_EMAIL")     # TU CORREO (ej: notificaciones@tudominio.com)
+    smtp_user = os.getenv("SMTP_EMAIL")      # TU CORREO (ej: notificaciones@tudominio.com)
     smtp_pass = os.getenv("SMTP_PASSWORD")  # TU CONTRASEÑA DE APLICACIÓN
 
     if not smtp_user or not smtp_pass:
