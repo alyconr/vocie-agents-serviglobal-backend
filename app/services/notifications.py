@@ -61,7 +61,7 @@ async def notify_all_parties(agent_id: str, data: dict):
     # --- 3. ENVIAR CORREOS ELECTRÓNICOS ---
     asunto = f"Confirmación Cita: {propiedad} - {fecha_humana}"
     
-    # Cuerpo del mensaje (HTML simple)
+    # Cuerpo del mensaje (HTML simple) 
     mensaje_html = f"""
     <h2>Hola {cliente_nombre},</h2>
     <p>Tu cita ha sido confirmada exitosamente.</p>
