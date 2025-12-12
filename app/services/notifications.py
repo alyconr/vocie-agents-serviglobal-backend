@@ -119,10 +119,20 @@ def send_email_smtp(to_email, subject, body_html):
     Envía correo usando servidor SMTP (Gmail, Outlook, AWS SES).
     Requiere variables de entorno.
     """
+    # 1. Extracción Segura del Host
     smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.getenv("SMTP_PORT", 587))
-    smtp_user = os.getenv("SMTP_EMAIL")      # TU CORREO (ej: notificaciones@tudominio.com)
-    smtp_pass = os.getenv("SMTP_PASSWORD")  # TU CONTRASEÑA DE APLICACIÓN
+    
+    # 2. Extracción Segura del Puerto (Corrección del Error)
+    port_env = os.getenv("SMTP_PORT")
+    try:
+        # Si existe y no está vacío, lo convertimos. Si falla, usamos 587.
+        smtp_port = int(port_env) if port_env and port_env.strip() else 587
+    except ValueError:
+        print(f"⚠️ Puerto SMTP inválido ('{port_env}'). Usando puerto 587 por defecto.")
+        smtp_port = 587
+
+    smtp_user = os.getenv("SMTP_EMAIL")     
+    smtp_pass = os.getenv("SMTP_PASSWORD")  
 
     if not smtp_user or not smtp_pass:
         print(f"⚠️ SMTP no configurado. No se envió correo a {to_email}")
