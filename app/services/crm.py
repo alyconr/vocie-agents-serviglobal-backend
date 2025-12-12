@@ -26,6 +26,7 @@ async def log_lead_bg(agent_id: str, data: dict):
             hora,
             data.get('cliente_nombre', 'Desconocido'),
             data.get('cliente_telefono', 'No provisto'),
+            data.get('cliente_email', 'No provisto'),
             data.get('propiedad_interes', 'General'),
             data.get('asesor_nombre', 'General'), # <--- CAMPO NUEVO
             clasificacion,
