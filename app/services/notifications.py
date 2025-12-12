@@ -58,7 +58,7 @@ async def notify_all_parties(agent_id: str, data: dict):
                 token=token, phone_id=phone_id
             )
 
-    # --- 3. ENVIAR CORREOS ELECTRÓNICOS (NUEVO) ---
+    # --- 3. ENVIAR CORREOS ELECTRÓNICOS (NUEVO) 
     # Asunto del correo
     asunto = f"Confirmación Cita: {propiedad} - {fecha_humana}"
     
