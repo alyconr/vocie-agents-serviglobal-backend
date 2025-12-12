@@ -42,7 +42,7 @@ services:
       # Las variables que leerá del archivo .env del servidor
       - WHATSAPP_TOKEN=${WHATSAPP_TOKEN}
       - WHATSAPP_PHONE_ID=${WHATSAPP_PHONE_ID}
-      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_EMAIL=${SMTP_EMAIL}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
     labels:
       - "traefik.enable=true"
