@@ -39,9 +39,11 @@ services:
       - ./credentials:/app/credentials
     environment:
       - REDIS_URL=redis://retell_redis:6379/0
-      # Las variables de WhatsApp las leerá del archivo .env del servidor
+      # Las variables que leerá del archivo .env del servidor
       - WHATSAPP_TOKEN=${WHATSAPP_TOKEN}
       - WHATSAPP_PHONE_ID=${WHATSAPP_PHONE_ID}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
     labels:
       - "traefik.enable=true"
       # CAMBIA ESTO POR TU SUBDOMINIO REAL
