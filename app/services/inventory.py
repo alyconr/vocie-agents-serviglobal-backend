@@ -8,10 +8,7 @@ from app.config import TENANTS
 
 # --- FUNCIÓN HELPER PARA NORMALIZAR TEXTO (Tildes y Mayúsculas) ---
 def normalize_text(text):
-    """
-    Convierte texto a minúsculas y elimina tildes/diacríticos.
-    Ej: "Bogotá" -> "bogota", "Nariño" -> "narino"
-    """
+    
     if not isinstance(text, str):
         return str(text)
     
