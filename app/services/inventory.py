@@ -11,7 +11,7 @@ async def search_inventory(agent_id: str, args: dict):
 
     cache_key = f"inventory:{agent_id}"
     
-    # --- FASE 1: LEER DATOS (Redis o Sheets) ---
+    # --- FASE 1: LEER DATOS ---
     cached_json = await redis_client.get(cache_key)
     df = None
 
@@ -24,7 +24,6 @@ async def search_inventory(agent_id: str, args: dict):
 
     if df is None:
         try:
-            # Descarga de Google Sheets
             service = get_service('sheets', 'v4', tenant['creds_file'])
             result = service.spreadsheets().values().get(
                 spreadsheetId=tenant['sheet_inventory_id'], 
@@ -57,9 +56,10 @@ async def search_inventory(agent_id: str, args: dict):
                 elif 'canon' in col: df.rename(columns={col: 'canon_mensual_cop'}, inplace=True)
                 elif 'administracion' in col: df.rename(columns={col: 'valor_admin_cop'}, inplace=True)
                 
-                # Detectar ID de calendario
+                # --- AQUÍ ESTÁ EL CAMBIO ---
+                # Detectar ID de calendario o email del asesor
                 elif 'calendar' in col or 'calendario' in col: df.rename(columns={col: 'asesor_calendar_id'}, inplace=True)
-                elif 'email' in col and 'asesor' in col: df.rename(columns={col: 'asesor_calendar_id'}, inplace=True)
+                elif 'email' in col and 'asesor' in col: df.rename(columns={col: 'asesor_calendar_id'}, inplace=True) # Fallback si usan la col email
 
             df = df.loc[:, ~df.columns.duplicated()]
 
@@ -103,26 +103,19 @@ async def search_inventory(agent_id: str, args: dict):
 
         if results.empty: return f"No encontré propiedades en {operacion_usuario} con esos criterios."
         
-        # --- FASE 3: RESPUESTA FORMATEADA (SOLUCIÓN A "DÓLARES") ---
+        # --- FASE 3: RESPUESTA ---
+        # Incluimos 'asesor_calendar_id' en la respuesta para que el LLM lo tenga en contexto
         campos_comunes = ['barrio', 'habitaciones', 'area_construida_m2', 'ciudad', 'asesor_nombre', 'asesor_calendar_id', 'direccion']
-        campos_precio = ['canon_mensual_cop', 'valor_admin_cop'] if operacion_usuario.lower() == 'arriendo' else ['precio_total_cop']
+        
+        if operacion_usuario.lower() == 'arriendo':
+            campos_precio = ['canon_mensual_cop', 'valor_admin_cop']
+        else:
+            campos_precio = ['precio_total_cop']
             
         cols_to_show = [c for c in (campos_comunes + campos_precio) if c in results.columns]
         
-        # Obtenemos los registros crudos
-        top_records = results.head(3)[cols_to_show].to_dict(orient='records')
-
-        # FORMATEO FORZADO A PESOS (Para que el LLM lea "COP")
-        for item in top_records:
-            for key, val in item.items():
-                if 'precio' in key or 'canon' in key or 'valor' in key:
-                    try:
-                        # Convertimos 2000000 -> "$ 2.000.000 COP"
-                        item[key] = f"$ {int(val):,.0f} COP".replace(",", ".")
-                    except:
-                        pass # Si no es número, lo dejamos igual
-
-        return f"Encontré {len(results)} opciones. {json.dumps(top_records)}"
+        top_3 = results.head(3)[cols_to_show].to_dict(orient='records')
+        return f"Encontré {len(results)} opciones. {json.dumps(top_3)}"
 
     except Exception as e:
         print(f"❌ Error filtrando: {e}")
