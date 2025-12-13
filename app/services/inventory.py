@@ -111,6 +111,13 @@ async def search_inventory(agent_id: str, args: dict):
             col_op_normalizada = results['tipo_operacion'].astype(str).apply(normalize_text)
             results = results[col_op_normalizada.str.contains(op_normalizada, na=False)]
 
+        if args.get('zona_ciudad') and 'zona_ciudad' in results.columns:
+            zona_usuario = normalize_text(args['zona_ciudad'])
+            col_zona_normalizada = results['zona_ciudad'].astype(str).apply(normalize_text)
+            results = results[col_zona_normalizada.str.contains(zona_usuario, na=False)]
+
+
+
         # 3. FILTRO PRESUPUESTO
         presupuesto = args.get('presupuesto_max')
         if presupuesto:
@@ -128,7 +135,7 @@ async def search_inventory(agent_id: str, args: dict):
         if results.empty: return f"No encontré propiedades en {operacion_usuario} con esos criterios."
         
         # --- FASE 3: RESPUESTA ---
-        campos_comunes = ['barrio', 'habitaciones', 'area_construida_m2', 'ciudad', 'asesor_nombre', 'asesor_email', 'direccion']
+        campos_comunes = ['barrio', 'habitaciones', 'area_construida_m2', 'ciudad', 'zona_ciudad', 'asesor_nombre', 'asesor_email', 'direccion']
         campos_precio = ['canon_mensual_cop', 'valor_admin_cop'] if operacion_usuario.lower() == 'arriendo' else ['precio_total_cop']
             
         cols_to_show = [c for c in (campos_comunes + campos_precio) if c in results.columns]
