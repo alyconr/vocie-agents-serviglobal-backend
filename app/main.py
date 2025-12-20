@@ -30,19 +30,63 @@ async def verify_whatsapp_webhook(
     print(f"❌ Fallo de verificación de Webhook. Token recibido: {hub_verify_token}")
     raise HTTPException(status_code=403, detail="Verificación fallida")
 
+#
 @app.post("/webhook/whatsapp")
 async def receive_whatsapp_message(request: Request):
     """
-    Endpoint para recibir mensajes y eventos de WhatsApp.
-    (Por ahora solo loguea, en Fase 2 procesaremos respuestas)
+    Endpoint Unificado: Recibe Mensajes (Texto) y Actualizaciones de Estado (Delivered/Read).
     """
     try:
         payload = await request.json()
-        print(f"📩 Mensaje de WhatsApp recibido: {payload}")
-        return {"status": "received"}
+        
+        # 1. Extracción Segura de Datos (Navegación del JSON de Meta)
+        # El JSON de Meta siempre viene anidado en entry -> changes -> value
+        entry = payload.get('entry', [])
+        if not entry:
+            return {"status": "ignored", "reason": "no_entry"}
+            
+        changes = entry[0].get('changes', [])
+        if not changes:
+            return {"status": "ignored", "reason": "no_changes"}
+            
+        value = changes[0].get('value', {})
+        
+        # --- CASO A: ACTUALIZACIÓN DE ESTADO (CONFIRMACIÓN DE ENVÍO) ---
+        # Aquí es donde verificas si el mensaje del ID 'wamid...' llegó.
+        if 'statuses' in value:
+            status_update = value['statuses'][0]
+            msg_id = status_update.get('id')        # El ID 'wamid...' que viste en tu script
+            status = status_update.get('status')    # sent, delivered, read, failed
+            recipient = status_update.get('recipient_id')
+            
+            print(f"🚦 ESTADO ACTUALIZADO: ID={msg_id} | Status={status} | Para={recipient}")
+            
+            # (Opcional) Aquí podrías actualizar tu Base de Datos:
+            # await db.update_message_status(msg_id, status)
+            
+            return {"status": "ack_status_update"}
+
+        # --- CASO B: MENSAJE ENTRANTE (CLIENTE ESCRIBE) ---
+        elif 'messages' in value:
+            message = value['messages'][0]
+            sender = message.get('from')
+            msg_type = message.get('type')
+            
+            print(f"📩 MENSAJE RECIBIDO de {sender} ({msg_type})")
+            
+            # Aquí procesarías el texto o audio
+            if msg_type == 'text':
+                print(f"   Texto: {message['text']['body']}")
+                
+            return {"status": "message_received"}
+
+        else:
+            return {"status": "ignored", "reason": "unknown_event"}
+
     except Exception as e:
-        print(f"Error procesando mensaje WA: {e}")
-        return {"status": "error"}
+        print(f"❌ Error procesando Webhook: {e}")
+        # Siempre responder 200 a Meta o te bloquearán el webhook
+        return {"status": "error", "detail": str(e)}
 
 @app.post("/webhook")
 async def retell_webhook(request: Request, bg_tasks: BackgroundTasks):
