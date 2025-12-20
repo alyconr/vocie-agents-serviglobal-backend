@@ -28,10 +28,11 @@ async def test_send():
     payload = {
         "messaging_product": "whatsapp",
         "to": DESTINATARIO,
+        "recipient_type": "individual",
         "type": "text",
         "text": {
-            
-            "body": "¡Hola! Este es un mensaje de prueba desde Python."
+
+            "body": "En qué puedo ayudarte el día de hoy?."
         }
     }
     
