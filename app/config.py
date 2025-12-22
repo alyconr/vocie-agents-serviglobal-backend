@@ -24,7 +24,7 @@ TENANTS = {
         "timezone": "America/Bogota",
         
         # DATOS DEL DUEÑO (TÚ)
-        "owner_phone": "3232038102",  # Tu celular para recibir alertas
+        "owner_phone": "573232038102",  # Tu celular para recibir alertas
         "owner_email": "alyconr@hotmail.com",
         "appointment_buffer_hours": 1,
         
