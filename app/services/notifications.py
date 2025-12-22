@@ -63,9 +63,9 @@ async def notify_all_parties(agent_id: str, data: dict):
                 phone_id=phone_id,
             )
         # Al Asesor
-        if tenant.get("owner_phone"):
+        if data.get("owner_phone"):
             await send_whatsapp(
-                to=tenant["owner_phone"],
+                to=data["owner_phone"],
                 template="alerta_nuevo_lead_owner",
                 params=[
                     tenant["name"],
