@@ -60,6 +60,8 @@ async def notify_all_parties(agent_id: str, data: dict):
                 params=[tenant['name'], cliente_nombre, data.get('cliente_telefono'), f"{fecha_humana} - {propiedad}"],
                 token=token, phone_id=phone_id
             )
+    else:
+        print("⚠️ Token o Phone ID de WhatsApp no configurado; no se envió WhatsApp.")
 
     # --- 3. ENVIAR CORREOS ELECTRÓNICOS ---
     asunto = f"Confirmación Cita: {propiedad} - {fecha_humana}"
