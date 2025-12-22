@@ -125,7 +125,7 @@ async def send_whatsapp(
         "type": "template",
         "template": {
             "name": template,
-            "language": {"code": "es"},
+            "language": {"code": "es_CO"},
             "components": [
                 {
                     "type": "body",
