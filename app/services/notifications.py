@@ -22,7 +22,9 @@ async def notify_all_parties(agent_id: str, data: dict):
 
     # 1. Datos base
     token = GLOBAL_WA_TOKEN
+    print(f" Edte es el token global: {token} ")
     phone_id =  GLOBAL_WA_PHONE_ID
+    print(f" Este es el phone id global: {phone_id} ")
     cliente_email = data.get('cliente_email')
     asesor_email = data.get('asesor_calendar_id') # Asumimos que el ID del calendario es el email
    
