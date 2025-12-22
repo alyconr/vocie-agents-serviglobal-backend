@@ -28,8 +28,6 @@ TENANTS = {
         "owner_email": "alyconr@hotmail.com",
         "appointment_buffer_hours": 1,
         
-        # Whatsapp (opcional, si no usará el global)
-        "whatsapp_token": os.getenv("WHATSAPP_TOKEN"),
-        "whatsapp_phone_id": os.getenv("WHATSAPP_PHONE_ID")
+        
     }
 }
