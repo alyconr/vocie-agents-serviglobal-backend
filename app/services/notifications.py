@@ -27,8 +27,7 @@ async def notify_all_parties(agent_id: str, data: dict):
 
     # 1. Datos base
     token = os.getenv("WHATSAPP_TOKEN", GLOBAL_WA_TOKEN)
-    phone_id = os.getenv("WHATSAPP_PHONE_ID", GLOBAL_WA_PHONE_ID)
-    print(f" Este es el token: {token} y el phone id: {phone_id}")
+    phone_id = os.getenv("WHATSAPP_PHONE_ID", GLOBAL_WA_PHONE_ID)    
 
     cliente_email = data.get("cliente_email")
     asesor_email = data.get(
