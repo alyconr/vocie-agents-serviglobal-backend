@@ -43,6 +43,7 @@ async def notify_all_parties(agent_id: str, data: dict):
     asesor_nombre = data.get('asesor_nombre', 'Asesor')
     # --- 2. ENVIAR WHATSAPP ---
     if token and phone_id:
+        print(f"📲 Enviando WhatsApps a {data.get('cliente_telefono')} y asesor...")
         # Al Cliente
         if data.get('cliente_telefono'):
             await send_whatsapp(
