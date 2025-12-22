@@ -25,6 +25,8 @@ async def notify_all_parties(agent_id: str, data: dict):
     phone_id = tenant.get('whatsapp_phone_id') or GLOBAL_WA_PHONE_ID
     cliente_email = data.get('cliente_email')
     asesor_email = data.get('asesor_calendar_id') # Asumimos que el ID del calendario es el email
+   
+   
 
     # Formateo de fecha
     fecha_raw = data.get('fecha_hora_inicio', '')
@@ -38,7 +40,7 @@ async def notify_all_parties(agent_id: str, data: dict):
 
     propiedad = data.get('propiedad_interes', 'Propiedad')
     cliente_nombre = data.get('cliente_nombre', 'Cliente')
-
+    asesor_nombre = data.get('asesor_nombre', 'Asesor')
     # --- 2. ENVIAR WHATSAPP ---
     if token and phone_id:
         # Al Cliente
@@ -46,7 +48,7 @@ async def notify_all_parties(agent_id: str, data: dict):
             await send_whatsapp(
                 to=data['cliente_telefono'],
                 template="cita_confirmada_cliente",
-                params=[cliente_nombre, fecha_humana],
+                params=[cliente_nombre, fecha_humana, propiedad, asesor_nombre],
                 token=token, phone_id=phone_id
             )
         # Al Asesor
@@ -94,7 +96,7 @@ async def notify_all_parties(agent_id: str, data: dict):
 
 
 async def send_whatsapp(to: str, template: str, params: list, token: str, phone_id: str):
-    url = f"https://graph.facebook.com/v17.0/{phone_id}/messages"
+    url = f"https://graph.facebook.com/v24.0/{phone_id}/messages"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     to = to.replace('+', '').replace(' ', '')
     payload = {
