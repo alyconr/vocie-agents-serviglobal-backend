@@ -18,11 +18,11 @@ async def notify_all_parties(agent_id: str, data: dict):
     Orquesta el envío de WhatsApps y Correos Electrónicos.
     """
     tenant = TENANTS.get(agent_id)
-    if not tenant: return
+    if not tenant: return 
 
     # 1. Datos base
-    token = tenant.get('whatsapp_token') or GLOBAL_WA_TOKEN
-    phone_id = tenant.get('whatsapp_phone_id') or GLOBAL_WA_PHONE_ID
+    token = GLOBAL_WA_TOKEN
+    phone_id =  GLOBAL_WA_PHONE_ID
     cliente_email = data.get('cliente_email')
     asesor_email = data.get('asesor_calendar_id') # Asumimos que el ID del calendario es el email
    
