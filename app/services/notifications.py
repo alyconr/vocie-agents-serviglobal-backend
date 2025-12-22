@@ -21,9 +21,9 @@ async def notify_all_parties(agent_id: str, data: dict):
     if not tenant: return 
 
     # 1. Datos base
-    token = GLOBAL_WA_TOKEN
+    token = os.getenv("WHATSAPP_TOKEN", GLOBAL_WA_TOKEN)
     print(f" Edte es el token global: {token} ")
-    phone_id =  GLOBAL_WA_PHONE_ID
+    phone_id = os.getenv("WHATSAPP_PHONE_ID", GLOBAL_WA_PHONE_ID)
     print(f" Este es el phone id global: {phone_id} ")
     cliente_email = data.get('cliente_email')
     asesor_email = data.get('asesor_calendar_id') # Asumimos que el ID del calendario es el email
