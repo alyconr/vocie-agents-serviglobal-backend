@@ -80,7 +80,7 @@ async def search_inventory(agent_id: str, args: dict):
 
             if 'precio_total_cop' in df.columns: df['precio_total_cop'] = df['precio_total_cop'].apply(clean_money)
             if 'canon_mensual_cop' in df.columns: df['canon_mensual_cop'] = df['canon_mensual_cop'].apply(clean_money)
-            if 'valor_admin_cop' in df.columns: df['valor_admin_cop'] = df['valor_admin_cop'].apply(clean_money).fillna(0)
+            if 'valor_administracion_mensual_cop' in df.columns: df['valor_administracion_mensual_cop'] = df['valor_administracion_mensual_cop'].apply(clean_money).fillna(0)
 
             await redis_client.setex(cache_key, 300, df.to_json(orient='records'))
 
