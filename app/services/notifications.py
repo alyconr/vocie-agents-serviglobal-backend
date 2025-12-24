@@ -55,7 +55,7 @@ async def notify_all_parties(agent_id: str, data: dict):
             await send_whatsapp(
                 to=data["cliente_telefono"],
                 template="cita_confirmada_cliente",
-                params=[cliente_nombre, fecha_humana, propiedad, asesor_nombre],
+                params=[cliente_nombre, fecha_humana, asesor_nombre, propiedad, ],
                 token=token,
                 phone_id=phone_id,
             )
@@ -68,7 +68,8 @@ async def notify_all_parties(agent_id: str, data: dict):
                     tenant["name"],
                     cliente_nombre,
                     data.get("cliente_telefono"),
-                    f"{fecha_humana} - {propiedad}",
+                    fecha_humana, 
+                    propiedad,
                 ],
                 token=token,
                 phone_id=phone_id,
