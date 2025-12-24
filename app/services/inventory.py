@@ -135,7 +135,7 @@ async def search_inventory(agent_id: str, args: dict):
         if results.empty: return f"No encontré propiedades en {operacion_usuario} con esos criterios."
         
         # --- FASE 3: RESPUESTA ---
-        campos_comunes = ['barrio', 'habitaciones', 'parqueadero', 'area_construida_m2', 'ciudad', 'zona_ciudad', 'asesor_nombre', 'asesor_email', 'direccion']
+        campos_comunes = ['barrio', 'habitaciones', 'parqueadero', 'piso', 'ascensor', 'conjunto_cerrado', 'estrato', 'valor_administracion_mensual_cop', 'acepta_credito', 'negociable','area_construida_m2', 'ciudad', 'zona_ciudad', 'asesor_nombre', 'asesor_email', 'direccion']
         campos_precio = ['canon_mensual_cop', 'valor_admin_cop'] if operacion_usuario.lower() == 'arriendo' else ['precio_total_cop']
             
         cols_to_show = [c for c in (campos_comunes + campos_precio) if c in results.columns]

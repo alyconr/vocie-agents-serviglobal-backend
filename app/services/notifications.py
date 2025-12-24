@@ -22,6 +22,9 @@ async def notify_all_parties(agent_id: str, data: dict):
     Orquesta el envío de WhatsApps y Correos Electrónicos.
     """
     tenant = TENANTS.get(agent_id)
+    print(f"🔔 Notificando partes para agente {tenant}...")  
+
+
     if not tenant:
         return
 
