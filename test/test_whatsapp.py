@@ -8,7 +8,7 @@ load_dotenv()
 # Configuración (Asegúrate de que estas variables estén en tu .env o reemplázalas aquí)
 TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_ID = os.getenv("WHATSAPP_PHONE_ID")
-DESTINATARIO = "573106666709" # <--- PON TU NÚMERO AQUÍ (con código de país, sin +)
+DESTINATARIO = "573193065230" # <--- PON TU NÚMERO AQUÍ (con código de país, sin +)
 
 async def test_send():
     if not TOKEN or not PHONE_ID:
