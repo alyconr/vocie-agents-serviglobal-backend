@@ -16,25 +16,27 @@ try:
 except:
     pass
 
-
 async def notify_all_parties(agent_id: str, data: dict):
     """
     Orquesta el envío de WhatsApps y Correos Electrónicos.
     """
     tenant = TENANTS.get(agent_id)
-    print(f"🔔 Notificando partes para agente {tenant}...")  
-
-
     if not tenant:
         return
+
+    print(f"🔔 Iniciando notificaciones para agente: {tenant['name']}")
 
     # 1. Datos base
     token = os.getenv("WHATSAPP_TOKEN", GLOBAL_WA_TOKEN)
     phone_id = os.getenv("WHATSAPP_PHONE_ID", GLOBAL_WA_PHONE_ID)    
 
     cliente_email = data.get("cliente_email")
+    
+    # --- CORRECCIÓN DEFINITIVA ---
+    # Solo usamos asesor_email. No intentamos usar el calendar_id porque no es un correo.
     asesor_email = data.get("asesor_email")
-    # Asumimos que el ID del calendario es el email
+    
+    print(f"📧 Email detectado para Asesor: {asesor_email}")
 
     # Formateo de fecha
     fecha_raw = data.get("fecha_hora_inicio", "")
@@ -49,19 +51,19 @@ async def notify_all_parties(agent_id: str, data: dict):
     propiedad = data.get("propiedad_interes", "Propiedad")
     cliente_nombre = data.get("cliente_nombre", "Cliente")
     asesor_nombre = data.get("asesor_nombre", "Asesor")
+
     # --- 2. ENVIAR WHATSAPP ---
     if token and phone_id:
-        print(f"📲 Enviando WhatsApps a {data.get('cliente_telefono')} y asesor...")
         # Al Cliente
         if data.get("cliente_telefono"):
             await send_whatsapp(
                 to=data["cliente_telefono"],
                 template="cita_confirmada_cliente",
-                params=[cliente_nombre, fecha_humana, asesor_nombre, propiedad, ],
+                params=[cliente_nombre, fecha_humana], 
                 token=token,
                 phone_id=phone_id,
             )
-        # Al Asesor
+        # Al Dueño (Owner) - Copia de seguridad
         if tenant.get("owner_phone"):
             await send_whatsapp(
                 to=tenant["owner_phone"],
@@ -70,14 +72,11 @@ async def notify_all_parties(agent_id: str, data: dict):
                     tenant["name"],
                     cliente_nombre,
                     data.get("cliente_telefono"),
-                    fecha_humana, 
-                    propiedad,
+                    f"{fecha_humana} - {propiedad}",
                 ],
                 token=token,
                 phone_id=phone_id,
             )
-    else:
-        print("⚠️ Token o Phone ID de WhatsApp no configurado; no se envió WhatsApp.")
 
     # --- 3. ENVIAR CORREOS ELECTRÓNICOS ---
     asunto = f"Confirmación Cita: {propiedad} - {fecha_humana}"
@@ -89,7 +88,7 @@ async def notify_all_parties(agent_id: str, data: dict):
     <ul>
         <li><strong>Propiedad:</strong> {propiedad}</li>
         <li><strong>Fecha:</strong> {fecha_humana}</li>
-        <li><strong>Asesor:</strong> {data.get('asesor_nombre', 'Asignado')}</li>
+        <li><strong>Asesor:</strong> {asesor_nombre}</li>
     </ul>
     <p>Nos vemos pronto.<br>Equipo {tenant['name']}</p>
     """
@@ -100,7 +99,7 @@ async def notify_all_parties(agent_id: str, data: dict):
 
     # Enviar al Asesor (Copia)
     if asesor_email and "@" in asesor_email:
-        asunto_asesor = f"🔔 Nueva Cita Agendada - {cliente_nombre}"
+        asunto_asesor = f"🔔 NUEVA CITA: {cliente_nombre}"
         mensaje_asesor = f"""
         <h3>Nueva Cita Agendada</h3>
         <ul>
@@ -114,29 +113,19 @@ async def notify_all_parties(agent_id: str, data: dict):
         send_email_smtp(
             to_email=asesor_email, subject=asunto_asesor, body_html=mensaje_asesor
         )
+    else:
+        print(f"⚠️ NO SE ENVIÓ CORREO AL ASESOR. Faltó el campo 'asesor_email' o no es válido: '{asesor_email}'")
 
-    # enviar al Dueño (Copia Oculta)
+    # Enviar al Dueño (Opcional - Copia de respaldo si es diferente al asesor)
     owner_email = tenant.get("owner_email")
-    if owner_email and "@" in owner_email:
-        asunto_owner = f"🔔 NUEVA CITA Agendada - {cliente_nombre}"
-        mensaje_owner = f"""
-        <h3>Nueva Cita Agendada en {tenant['name']}</h3>
-        <ul>
-            <li><strong>Cliente:</strong> {cliente_nombre}</li>
-            <li><strong>Teléfono:</strong> {data.get('cliente_telefono')}</li>
-            <li><strong>Email:</strong> {cliente_email}</li>
-            <li><strong>Propiedad:</strong> {propiedad}</li>
-            <li><strong>Fecha:</strong> {fecha_humana}</li>
-        </ul>
-        """
+    if owner_email and "@" in owner_email and owner_email != asesor_email:
         send_email_smtp(
-            to_email=owner_email, subject=asunto_owner, body_html=mensaje_owner
+            to_email=owner_email, 
+            subject=f"Respaldo Cita: {cliente_nombre}", 
+            body_html=mensaje_asesor
         )
 
-
-async def send_whatsapp(
-    to: str, template: str, params: list, token: str, phone_id: str
-):
+async def send_whatsapp(to: str, template: str, params: list, token: str, phone_id: str):
     url = f"https://graph.facebook.com/v24.0/{phone_id}/messages"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     to = to.replace("+", "").replace(" ", "")
@@ -146,7 +135,7 @@ async def send_whatsapp(
         "type": "template",
         "template": {
             "name": template,
-            "language": {"code": "es_CO"},
+            "language": {"code": "es"}, 
             "components": [
                 {
                     "type": "body",
@@ -161,21 +150,12 @@ async def send_whatsapp(
         except Exception as e:
             print(f"❌ Error WhatsApp: {e}")
 
-
 def send_email_smtp(to_email, subject, body_html):
-    """
-    Envía correo usando servidor SMTP (Gmail, Outlook, AWS SES).
-    Maneja puertos vacíos de forma segura.
-    """
     smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
-
-    # --- CORRECCIÓN CRÍTICA: Manejo seguro del puerto ---
     port_env = os.getenv("SMTP_PORT")
     try:
-        # Si existe y tiene texto, convertir. Si es cadena vacía o None, usar 587.
         smtp_port = int(port_env) if port_env and port_env.strip() else 587
     except ValueError:
-        print(f"⚠️ Puerto SMTP inválido ('{port_env}'). Usando 587.")
         smtp_port = 587
 
     smtp_user = os.getenv("SMTP_EMAIL")
