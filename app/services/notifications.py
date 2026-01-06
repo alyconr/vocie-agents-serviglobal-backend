@@ -33,9 +33,8 @@ async def notify_all_parties(agent_id: str, data: dict):
     phone_id = os.getenv("WHATSAPP_PHONE_ID", GLOBAL_WA_PHONE_ID)    
 
     cliente_email = data.get("cliente_email")
-    asesor_email = data.get(
-        "asesor_calendar_id"
-    )  # Asumimos que el ID del calendario es el email
+    asesor_email = data.get("asesor_email")
+    # Asumimos que el ID del calendario es el email
 
     # Formateo de fecha
     fecha_raw = data.get("fecha_hora_inicio", "")
@@ -100,8 +99,8 @@ async def notify_all_parties(agent_id: str, data: dict):
         send_email_smtp(to_email=cliente_email, subject=asunto, body_html=mensaje_html)
 
     # Enviar al Asesor (Copia)
-    if asesor_email and "@" in asesor_email and "group.calendar" not in asesor_email:
-        asunto_asesor = f"🔔 NUEVA CITA: {cliente_nombre} - {fecha_humana}"
+    if asesor_email and "@" in asesor_email:
+        asunto_asesor = f"🔔 Nueva Cita Agendada - {cliente_nombre}"
         mensaje_asesor = f"""
         <h3>Nueva Cita Agendada</h3>
         <ul>
@@ -114,6 +113,24 @@ async def notify_all_parties(agent_id: str, data: dict):
         """
         send_email_smtp(
             to_email=asesor_email, subject=asunto_asesor, body_html=mensaje_asesor
+        )
+
+    # enviar al Dueño (Copia Oculta)
+    owner_email = tenant.get("owner_email")
+    if owner_email and "@" in owner_email:
+        asunto_owner = f"🔔 NUEVA CITA Agendada - {cliente_nombre}"
+        mensaje_owner = f"""
+        <h3>Nueva Cita Agendada en {tenant['name']}</h3>
+        <ul>
+            <li><strong>Cliente:</strong> {cliente_nombre}</li>
+            <li><strong>Teléfono:</strong> {data.get('cliente_telefono')}</li>
+            <li><strong>Email:</strong> {cliente_email}</li>
+            <li><strong>Propiedad:</strong> {propiedad}</li>
+            <li><strong>Fecha:</strong> {fecha_humana}</li>
+        </ul>
+        """
+        send_email_smtp(
+            to_email=owner_email, subject=asunto_owner, body_html=mensaje_owner
         )
 
 
