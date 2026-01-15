@@ -24,8 +24,8 @@ TENANTS = {
         "timezone": "America/Bogota",
         
         # DATOS DEL DUEÑO (TÚ)
-        "owner_phone": "573178193639",  # Tu celular para recibir alertas
-        "owner_email": "jonasc21@gmail.com",
+        "owner_phone": "573232038102",  # Tu celular para recibir alertas
+        "owner_email": "voiceagentsalyconr@gmail.com",
         "appointment_buffer_hours": 1,
         
         

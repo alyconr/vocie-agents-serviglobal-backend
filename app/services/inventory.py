@@ -67,10 +67,12 @@ async def search_inventory(agent_id: str, args: dict):
                 if 'parqueadero' in col: continue
                 
                 if 'operacion' in col or 'modalidad' in col: df.rename(columns={col: 'tipo_operacion'}, inplace=True)
+                elif 'tipo' in col and 'inmueble' in col: df.rename(columns={col: 'tipo_inmueble'}, inplace=True) # <--- NUEVO
                 elif ('precio' in col and 'cop' in col) or ('venta' in col and 'valor' in col): df.rename(columns={col: 'precio_total_cop'}, inplace=True)
                 elif 'canon' in col: df.rename(columns={col: 'canon_mensual_cop'}, inplace=True)
                 elif 'administracion' in col or 'admin' in col: df.rename(columns={col: 'valor_admin_cop'}, inplace=True)
                 elif 'email' in col and 'asesor' in col: df.rename(columns={col: 'asesor_email'}, inplace=True)
+                elif 'calendario' in col and 'id' in col: df.rename(columns={col: 'asesor_calendar_id'}, inplace=True)
 
             # Limpieza Duplicados
             df = df.loc[:, ~df.columns.duplicated()]
@@ -94,7 +96,7 @@ async def search_inventory(agent_id: str, args: dict):
     try:
         results = df.copy()
         
-        # 1. FILTRO CIUDAD (NORMALIZADO)
+        # 1. FILTRO CIUDAD
         if args.get('ciudad') and 'ciudad' in results.columns:
             ciudad_usuario = normalize_text(args['ciudad'])
             columna_normalizada = results['ciudad'].astype(str).apply(normalize_text)
@@ -107,13 +109,27 @@ async def search_inventory(agent_id: str, args: dict):
             col_op_normalizada = results['tipo_operacion'].astype(str).apply(normalize_text)
             results = results[col_op_normalizada.str.contains(op_normalizada, na=False)]
 
-        # Filtro Zona
+        # 3. FILTRO ZONA
         if args.get('zona_ciudad') and 'zona_ciudad' in results.columns:
             zona_usuario = normalize_text(args['zona_ciudad'])
             col_zona_normalizada = results['zona_ciudad'].astype(str).apply(normalize_text)
             results = results[col_zona_normalizada.str.contains(zona_usuario, na=False)]
 
-        # 3. FILTRO PRESUPUESTO (BLINDADO CONTRA ERRORES DE TIPO)
+        # 4. FILTRO TIPO DE INMUEBLE (NUEVO)
+        if args.get('tipo_inmueble') and 'tipo_inmueble' in results.columns:
+            tipo_usuario = normalize_text(args['tipo_inmueble'])
+            # Filtramos palabras clave (ej: "apto" hace match con "Apartamento")
+            if "apto" in tipo_usuario or "apartamento" in tipo_usuario:
+                match_key = "apartamento"
+            elif "casa" in tipo_usuario:
+                match_key = "casa"
+            else:
+                match_key = tipo_usuario
+
+            col_tipo_normalizada = results['tipo_inmueble'].astype(str).apply(normalize_text)
+            results = results[col_tipo_normalizada.str.contains(match_key, na=False)]
+
+        # 5. FILTRO PRESUPUESTO (BLINDADO)
         presupuesto = args.get('presupuesto_max')
         if presupuesto:
             try:
@@ -121,7 +137,6 @@ async def search_inventory(agent_id: str, args: dict):
                 
                 if operacion_usuario.lower() == 'arriendo':
                     if 'canon_mensual_cop' in results.columns:
-                        # Forzamos a numérico antes de operar. Si falla, asume 0.
                         canon = pd.to_numeric(results['canon_mensual_cop'], errors='coerce').fillna(0)
                         
                         if 'valor_admin_cop' in results.columns:
@@ -129,24 +144,29 @@ async def search_inventory(agent_id: str, args: dict):
                         else:
                             admin = 0
                             
-                        # Operación segura: float + float
                         results['costo_mensual_total'] = canon + admin
                         results = results[results['costo_mensual_total'] <= presupuesto]
                         
-                else: # Lógica para Venta
+                else: # Venta
                     if 'precio_total_cop' in results.columns:
-                        # Limpieza de seguridad
                         results['precio_total_cop'] = pd.to_numeric(results['precio_total_cop'], errors='coerce').fillna(0)
                         results = results[results['precio_total_cop'] <= presupuesto]
                         
             except Exception as e:
-                print(f"⚠️ Error en filtro de presupuesto (saltando filtro): {e}")
+                print(f"⚠️ Error en filtro de presupuesto: {e}")
                 pass
 
         if results.empty: return f"No encontré propiedades en {operacion_usuario} con esos criterios."
         
         # --- FASE 3: RESPUESTA ---
-        campos_comunes = ['barrio', 'habitaciones', 'banos', 'parqueadero',  'piso', 'ascensor', 'conjunto_cerrado', 'mascotas', 'area_construida_m2', 'ciudad', 'zona_ciudad', 'asesor_nombre', 'asesor_email', 'asesor_calendar_id', 'direccion']
+        # AQUI AGREGAMOS 'asesor_calendar_id' Y CORREGIMOS SINTAXIS
+        campos_comunes = [
+            'barrio', 'habitaciones', 'banos', 'parqueadero', 'piso', 'ascensor', 
+            'conjunto_cerrado', 'mascotas', 'area_construida_m2', 'tipo_inmueble',
+            'ciudad', 'zona_ciudad', 'asesor_nombre', 'asesor_email', 
+            'asesor_calendar_id', 'direccion'
+        ]
+        
         campos_precio = ['canon_mensual_cop', 'valor_admin_cop'] if operacion_usuario.lower() == 'arriendo' else ['precio_total_cop']
             
         cols_to_show = [c for c in (campos_comunes + campos_precio) if c in results.columns]
@@ -154,13 +174,12 @@ async def search_inventory(agent_id: str, args: dict):
         # Obtenemos los 3 mejores resultados
         top_records = results.head(3)[cols_to_show].to_dict(orient='records')
 
-        # FORMATEO VISUAL A PESOS (Solo para lectura del LLM)
+        # FORMATEO VISUAL A PESOS
         for item in top_records:
             for key, val in item.items():
-                if 'precio' in key or 'canon' in key or 'valor' in key:
+                if ('precio' in key or 'canon' in key or 'valor' in key) and isinstance(val, (int, float)):
                     try:
-                        # Convierte 2500000.0 -> "$ 2.500.000 COP"
-                        item[key] = f"$ {int(float(val)):,.0f} COP".replace(",", ".")
+                        item[key] = f"$ {int(val):,.0f} COP".replace(",", ".")
                     except:
                         pass 
 
