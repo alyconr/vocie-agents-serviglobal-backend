@@ -67,7 +67,7 @@ async def search_inventory(agent_id: str, args: dict):
                 if 'parqueadero' in col: continue
                 
                 if 'operacion' in col or 'modalidad' in col: df.rename(columns={col: 'tipo_operacion'}, inplace=True)
-                elif 'tipo' in col and 'inmueble' in col: df.rename(columns={col: 'tipo_inmueble'}, inplace=True) # <--- NUEVO
+                elif 'tipo' in col and 'inmueble' in col: df.rename(columns={col: 'tipo_inmueble'}, inplace=True)
                 elif ('precio' in col and 'cop' in col) or ('venta' in col and 'valor' in col): df.rename(columns={col: 'precio_total_cop'}, inplace=True)
                 elif 'canon' in col: df.rename(columns={col: 'canon_mensual_cop'}, inplace=True)
                 elif 'administracion' in col or 'admin' in col: df.rename(columns={col: 'valor_admin_cop'}, inplace=True)
@@ -115,16 +115,23 @@ async def search_inventory(agent_id: str, args: dict):
             col_zona_normalizada = results['zona_ciudad'].astype(str).apply(normalize_text)
             results = results[col_zona_normalizada.str.contains(zona_usuario, na=False)]
 
-        # 4. FILTRO TIPO DE INMUEBLE (NUEVO)
+        # 4. FILTRO TIPO DE INMUEBLE (ACTUALIZADO: Lote, Bodega, Oficina)
         if args.get('tipo_inmueble') and 'tipo_inmueble' in results.columns:
             tipo_usuario = normalize_text(args['tipo_inmueble'])
-            # Filtramos palabras clave (ej: "apto" hace match con "Apartamento")
+            
+            # Mapeo de sinónimos
             if "apto" in tipo_usuario or "apartamento" in tipo_usuario:
                 match_key = "apartamento"
             elif "casa" in tipo_usuario:
                 match_key = "casa"
+            elif "lote" in tipo_usuario or "terreno" in tipo_usuario:
+                match_key = "lote"
+            elif "bodega" in tipo_usuario:
+                match_key = "bodega"
+            elif "oficina" in tipo_usuario or "consultorio" in tipo_usuario:
+                match_key = "oficina"
             else:
-                match_key = tipo_usuario
+                match_key = tipo_usuario # Búsqueda general si no coincide con las anteriores
 
             col_tipo_normalizada = results['tipo_inmueble'].astype(str).apply(normalize_text)
             results = results[col_tipo_normalizada.str.contains(match_key, na=False)]
@@ -159,7 +166,6 @@ async def search_inventory(agent_id: str, args: dict):
         if results.empty: return f"No encontré propiedades en {operacion_usuario} con esos criterios."
         
         # --- FASE 3: RESPUESTA ---
-        # AQUI AGREGAMOS 'asesor_calendar_id' Y CORREGIMOS SINTAXIS
         campos_comunes = [
             'barrio', 'habitaciones', 'banos', 'parqueadero', 'piso', 'ascensor', 
             'conjunto_cerrado', 'mascotas', 'area_construida_m2', 'tipo_inmueble',
