@@ -179,8 +179,7 @@ async def retell_webhook(request: Request, bg_tasks: BackgroundTasks):
             if success:
                 bg_tasks.add_task(notifications.notify_all_parties, agent_id, args)
                 bg_tasks.add_task(crm.log_lead_bg, agent_id, args)
-                
-               
+
                 return {"result": "Listo, cita agendada y confirmación enviada."}
             else:
                 try:

@@ -22,15 +22,14 @@ async def notify_all_parties(agent_id: str, data: dict):
     Orquesta el envío de WhatsApps y Correos Electrónicos.
     """
     tenant = TENANTS.get(agent_id)
-    print(f"🔔 Notificando partes para agente {tenant}...")  
-
+    print(f"🔔 Notificando partes para agente {tenant}...")
 
     if not tenant:
         return
 
     # 1. Datos base
     token = os.getenv("WHATSAPP_TOKEN", GLOBAL_WA_TOKEN)
-    phone_id = os.getenv("WHATSAPP_PHONE_ID", GLOBAL_WA_PHONE_ID)    
+    phone_id = os.getenv("WHATSAPP_PHONE_ID", GLOBAL_WA_PHONE_ID)
 
     cliente_email = data.get("cliente_email")
     asesor_email = data.get(
@@ -58,7 +57,12 @@ async def notify_all_parties(agent_id: str, data: dict):
             await send_whatsapp(
                 to=data["cliente_telefono"],
                 template="cita_confirmada_cliente",
-                params=[cliente_nombre, fecha_humana, asesor_nombre, propiedad, ],
+                params=[
+                    cliente_nombre,
+                    fecha_humana,
+                    asesor_nombre,
+                    propiedad,
+                ],
                 token=token,
                 phone_id=phone_id,
             )
@@ -71,7 +75,7 @@ async def notify_all_parties(agent_id: str, data: dict):
                     tenant["name"],
                     cliente_nombre,
                     data.get("cliente_telefono"),
-                    fecha_humana, 
+                    fecha_humana,
                     propiedad,
                 ],
                 token=token,
@@ -100,7 +104,7 @@ async def notify_all_parties(agent_id: str, data: dict):
         send_email_smtp(to_email=cliente_email, subject=asunto, body_html=mensaje_html)
 
     # Enviar al Asesor (Copia)
-    if asesor_email and "@" in asesor_email :
+    if asesor_email and "@" in asesor_email:
         asunto_asesor = f"🔔 NUEVA CITA: {cliente_nombre} - {fecha_humana}"
         mensaje_asesor = f"""
         <h3>Nueva Cita Agendada</h3>
