@@ -2,18 +2,20 @@ import json
 import pandas as pd
 import io
 import unicodedata
+from datetime import datetime
+import pytz
 from app.core.redis_client import redis_client
 from app.core.google_auth import get_service
 from app.config import TENANTS
 
-# --- FUNCIÓN HELPER PARA NORMALIZAR TEXTO (Tildes y Mayúsculas) ---
+# --- FUNCIÓN HELPER PARA NORMALIZAR TEXTO ---
 def normalize_text(text):
     if not isinstance(text, str):
         return str(text)
     
-    # 1. Normalizar unicode (separar caracteres de sus tildes)
+    # 1. Normalizar unicode
     normalized = unicodedata.normalize('NFD', text)
-    # 2. Filtrar solo caracteres no-diacríticos y pasar a minúsculas
+    # 2. Filtrar caracteres no-diacríticos y minúsculas
     return "".join(c for c in normalized if unicodedata.category(c) != 'Mn').lower()
 
 async def search_inventory(agent_id: str, args: dict):
@@ -28,9 +30,7 @@ async def search_inventory(agent_id: str, args: dict):
 
     if cached_json:
         try:
-            # Intentamos leer de la caché
             df = pd.read_json(io.StringIO(cached_json), orient='records')
-            # Validación básica de integridad
             if 'precio_total_cop' not in df.columns and 'canon_mensual_cop' not in df.columns:
                 df = None 
         except Exception:
@@ -38,7 +38,7 @@ async def search_inventory(agent_id: str, args: dict):
 
     if df is None:
         try:
-            # Descarga de Google Sheets si no hay caché
+            # Descarga de Google Sheets
             service = get_service('sheets', 'v4', tenant['creds_file'])
             result = service.spreadsheets().values().get(
                 spreadsheetId=tenant['sheet_inventory_id'], 
@@ -48,7 +48,7 @@ async def search_inventory(agent_id: str, args: dict):
             rows = result.get('values', [])
             if not rows: return "El inventario está vacío."
             
-            # Buscar header dinámicamente
+            # Buscar header
             header_idx = 0
             for i, row in enumerate(rows[:5]):
                 row_str = str(row).lower()
@@ -62,10 +62,8 @@ async def search_inventory(agent_id: str, args: dict):
             df.columns = df.columns.astype(str).str.strip().str.lower()
             df.columns = df.columns.str.replace(' ', '_').str.replace('.', '')
             
-            # RENOMBRADO INTELIGENTE DE COLUMNAS
             for col in df.columns:
                 if 'parqueadero' in col: continue
-                
                 if 'operacion' in col or 'modalidad' in col: df.rename(columns={col: 'tipo_operacion'}, inplace=True)
                 elif 'tipo' in col and 'inmueble' in col: df.rename(columns={col: 'tipo_inmueble'}, inplace=True)
                 elif ('precio' in col and 'cop' in col) or ('venta' in col and 'valor' in col): df.rename(columns={col: 'precio_total_cop'}, inplace=True)
@@ -74,10 +72,16 @@ async def search_inventory(agent_id: str, args: dict):
                 elif 'email' in col and 'asesor' in col: df.rename(columns={col: 'asesor_email'}, inplace=True)
                 elif 'calendario' in col and 'id' in col: df.rename(columns={col: 'asesor_calendar_id'}, inplace=True)
 
+            # --- AGREGAR FECHA DE EJECUCIÓN (REQ. USUARIO) ---
+            # Esto crea una columna con la fecha y hora actual de Bogotá para todo el dataset
+            bogota_tz = pytz.timezone('America/Bogota')
+            timestamp_str = datetime.now(bogota_tz).strftime("%Y-%m-%d %I:%M %p")
+            df['fecha_ejecucion'] = timestamp_str
+
             # Limpieza Duplicados
             df = df.loc[:, ~df.columns.duplicated()]
 
-            # Limpieza Numérica Inicial (Para guardar limpio en Redis)
+            # Limpieza Numérica
             def clean_money(val):
                 return pd.to_numeric(str(val).replace('$', '').replace('.', '').replace(',', '').replace(' ', ''), errors='coerce')
 
@@ -85,7 +89,7 @@ async def search_inventory(agent_id: str, args: dict):
             if 'canon_mensual_cop' in df.columns: df['canon_mensual_cop'] = df['canon_mensual_cop'].apply(clean_money)
             if 'valor_admin_cop' in df.columns: df['valor_admin_cop'] = df['valor_admin_cop'].apply(clean_money).fillna(0)
 
-            # Guardamos en caché por 5 minutos
+            # Guardamos en Redis (Incluye la nueva columna fecha_ejecucion)
             await redis_client.setex(cache_key, 300, df.to_json(orient='records'))
 
         except Exception as e:
@@ -96,30 +100,29 @@ async def search_inventory(agent_id: str, args: dict):
     try:
         results = df.copy()
         
-        # 1. FILTRO CIUDAD
+        # 1. Filtro Ciudad
         if args.get('ciudad') and 'ciudad' in results.columns:
             ciudad_usuario = normalize_text(args['ciudad'])
             columna_normalizada = results['ciudad'].astype(str).apply(normalize_text)
             results = results[columna_normalizada.str.contains(ciudad_usuario, na=False)]
 
-        # 2. FILTRO TIPO DE OPERACIÓN
+        # 2. Filtro Operación
         operacion_usuario = args.get('tipo_operacion', 'Venta')
         if 'tipo_operacion' in results.columns:
             op_normalizada = normalize_text(operacion_usuario)
             col_op_normalizada = results['tipo_operacion'].astype(str).apply(normalize_text)
             results = results[col_op_normalizada.str.contains(op_normalizada, na=False)]
 
-        # 3. FILTRO ZONA
+        # 3. Filtro Zona
         if args.get('zona_ciudad') and 'zona_ciudad' in results.columns:
             zona_usuario = normalize_text(args['zona_ciudad'])
             col_zona_normalizada = results['zona_ciudad'].astype(str).apply(normalize_text)
             results = results[col_zona_normalizada.str.contains(zona_usuario, na=False)]
 
-        # 4. FILTRO TIPO DE INMUEBLE (ACTUALIZADO: Lote, Bodega, Oficina)
+        # 4. Filtro Tipo Inmueble (Ampliado)
         if args.get('tipo_inmueble') and 'tipo_inmueble' in results.columns:
             tipo_usuario = normalize_text(args['tipo_inmueble'])
             
-            # Mapeo de sinónimos
             if "apto" in tipo_usuario or "apartamento" in tipo_usuario:
                 match_key = "apartamento"
             elif "casa" in tipo_usuario:
@@ -131,12 +134,12 @@ async def search_inventory(agent_id: str, args: dict):
             elif "oficina" in tipo_usuario or "consultorio" in tipo_usuario:
                 match_key = "oficina"
             else:
-                match_key = tipo_usuario # Búsqueda general si no coincide con las anteriores
+                match_key = tipo_usuario
 
             col_tipo_normalizada = results['tipo_inmueble'].astype(str).apply(normalize_text)
             results = results[col_tipo_normalizada.str.contains(match_key, na=False)]
 
-        # 5. FILTRO PRESUPUESTO (BLINDADO)
+        # 5. Filtro Presupuesto
         presupuesto = args.get('presupuesto_max')
         if presupuesto:
             try:
@@ -145,42 +148,37 @@ async def search_inventory(agent_id: str, args: dict):
                 if operacion_usuario.lower() == 'arriendo':
                     if 'canon_mensual_cop' in results.columns:
                         canon = pd.to_numeric(results['canon_mensual_cop'], errors='coerce').fillna(0)
-                        
                         if 'valor_admin_cop' in results.columns:
                             admin = pd.to_numeric(results['valor_admin_cop'], errors='coerce').fillna(0)
                         else:
                             admin = 0
-                            
                         results['costo_mensual_total'] = canon + admin
                         results = results[results['costo_mensual_total'] <= presupuesto]
-                        
-                else: # Venta
+                else: 
                     if 'precio_total_cop' in results.columns:
                         results['precio_total_cop'] = pd.to_numeric(results['precio_total_cop'], errors='coerce').fillna(0)
                         results = results[results['precio_total_cop'] <= presupuesto]
-                        
             except Exception as e:
-                print(f"⚠️ Error en filtro de presupuesto: {e}")
+                print(f"⚠️ Error filtro presupuesto: {e}")
                 pass
 
         if results.empty: return f"No encontré propiedades en {operacion_usuario} con esos criterios."
         
         # --- FASE 3: RESPUESTA ---
+        # Agregamos 'fecha_ejecucion' a la lista de campos visibles
         campos_comunes = [
             'barrio', 'habitaciones', 'banos', 'parqueadero', 'piso', 'ascensor', 
             'conjunto_cerrado', 'mascotas', 'area_construida_m2', 'tipo_inmueble',
             'ciudad', 'zona_ciudad', 'asesor_nombre', 'asesor_email', 
-            'asesor_calendar_id', 'direccion'
+            'asesor_calendar_id', 'direccion', 'fecha_ejecucion'
         ]
         
         campos_precio = ['canon_mensual_cop', 'valor_admin_cop'] if operacion_usuario.lower() == 'arriendo' else ['precio_total_cop']
             
         cols_to_show = [c for c in (campos_comunes + campos_precio) if c in results.columns]
         
-        # Obtenemos los 3 mejores resultados
         top_records = results.head(3)[cols_to_show].to_dict(orient='records')
 
-        # FORMATEO VISUAL A PESOS
         for item in top_records:
             for key, val in item.items():
                 if ('precio' in key or 'canon' in key or 'valor' in key) and isinstance(val, (int, float)):
