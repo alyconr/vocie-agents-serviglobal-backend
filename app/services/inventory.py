@@ -75,8 +75,13 @@ async def search_inventory(agent_id: str, args: dict):
             # --- AGREGAR FECHA DE EJECUCIÓN (REQ. USUARIO) ---
             # Esto crea una columna con la fecha y hora actual de Bogotá para todo el dataset
             bogota_tz = pytz.timezone('America/Bogota')
-            timestamp_str = datetime.now(bogota_tz).strftime("%Y-%m-%d %I:%M %p")
+            now_bogota = datetime.now(bogota_tz)
+            timestamp_str = now_bogota.strftime("%Y-%m-%d %I:%M %p")
             df['fecha_ejecucion'] = timestamp_str
+
+            # Agregar día de la semana
+            days = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+            df['weekday'] = days[now_bogota.weekday()]
 
             # Limpieza Duplicados
             df = df.loc[:, ~df.columns.duplicated()]
