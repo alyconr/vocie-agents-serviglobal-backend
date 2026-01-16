@@ -246,6 +246,7 @@ async def search_inventory(agent_id: str, args: dict):
             "asesor_calendar_id",
             "direccion",
             "fecha_ejecucion",
+            "weekday"
         ]
 
         campos_precio = (
