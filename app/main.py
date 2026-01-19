@@ -122,19 +122,29 @@ async def retell_webhook(request: Request, bg_tasks: BackgroundTasks):
 
         # C. LÓGICA DE INFERENCIA MEJORADA (PRIORIDAD ESTRICTA)
         keys = args.keys()
+        user_text = str(args.get("user_message", "")).lower()
 
-        # CASO 1: AGENDAR (Prioridad Máxima)
+        # CASO 1: DETECTAR CANCELACIÓN (Prioridad Absoluta)
+        # Si el usuario dice "Cancelar cita", "cancelar", o boton quick reply
+        if (
+            "cancelar" in user_text
+            or args.get("action") == "cancel_appointment"
+            or "cancelar" in str(payload)
+        ):
+            func_name = "cancel_appointment"
+
+        # CASO 2: AGENDAR (Si no es cancelación)
         # Si hay teléfono O (nombre Y fecha_hora), es un cierre.
-        if "cliente_telefono" in keys or (
+        elif "cliente_telefono" in keys or (
             "cliente_nombre" in keys and "fecha_hora_inicio" in keys
         ):
             func_name = "book_appointment_and_notify"
 
-        # CASO 2: BUSCAR INVENTARIO
+        # CASO 3: BUSCAR INVENTARIO
         elif "ciudad" in keys or "tipo_operacion" in keys or "presupuesto_max" in keys:
             func_name = "search_inventory"
 
-        # CASO 3: CONSULTAR DISPONIBILIDAD (Solo si no es lo anterior)
+        # CASO 4: CONSULTAR DISPONIBILIDAD
         elif "fecha" in keys or "asesor_calendar_id" in keys:
             func_name = "check_calendar_availability"
 
@@ -145,21 +155,6 @@ async def retell_webhook(request: Request, bg_tasks: BackgroundTasks):
             func_name = "book_appointment_and_notify"
         elif "fecha" in args:
             func_name = "check_calendar_availability"
-
-        # --- AÑADIDO: Detectar cancelación por texto o payload ---
-        # Si el usuario dice "Cancelar cita", "cancelar", o boton quick reply "CANCEL_APPOINTMENT"
-        # Nota: Retell a veces manda 'transcript' o 'user_message'.
-        # Si es un botón quick reply de WhatsApp, el payload puede venir en un campo específico segun como Retell lo pase.
-        # Asumiremos que si 'message' o 'accion' dice 'cancelar', es esto.
-
-        user_text = str(args.get("user_message", "")).lower()
-        if (
-            "cancelar" in user_text
-            or args.get("action") == "cancel_appointment"
-            or "cancelar" in str(payload)
-        ):
-            if func_name is None:  # Si no se ha decidido antes
-                func_name = "cancel_appointment"
 
         print(f"🕵️ Función inferida: {func_name}")
 
