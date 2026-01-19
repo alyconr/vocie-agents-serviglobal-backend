@@ -313,4 +313,37 @@ async def notify_cancellation(
             <li><strong>Origen:</strong> WhatsApp Automático</li>
         </ul>
         """
+
         send_email_smtp(owner_email, asunto_owner, body_owner)
+
+    # C. Asesor (Email)
+    # Intentamos sacar el email del asesor del summary o description
+    asesor_email = None
+    if "CITA:" in summary:
+        try:
+            # summary: "CITA: Juan Perez - Apartamento Centro" -> parts[1] es el asesor
+            parts = summary.replace("CITA:", "").split("-")
+            if len(parts) > 1:
+                asesor_email = parts[
+                    1
+                ].strip()  # Esto asume que el asesor está en el summary
+        except:
+            pass
+
+    # Si no lo sacamos del summary, intentamos buscarlo en el description (si lo guardamos)
+    # O usamos el email del dueño como fallback si no hay otro
+    if not asesor_email and owner_email:
+        asesor_email = owner_email
+
+    if asesor_email:
+        asunto_asesor = f"🚫 CITA CANCELADA: {cliente_nombre}"
+        body_asesor = f"""
+        <h3>Aviso de Cancelación</h3>
+        <ul>
+            <li><strong>Cliente:</strong> {cliente_nombre}</li>
+            <li><strong>Teléfono:</strong> {cliente_telefono}</li>
+            <li><strong>Fecha cancelada:</strong> {fecha_humana}</li>
+            <li><strong>Origen:</strong> WhatsApp Automático</li>
+        </ul>
+        """
+        send_email_smtp(asesor_email, asunto_asesor, body_asesor)

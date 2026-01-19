@@ -10,23 +10,33 @@ BOGOTA_TZ = pytz.timezone("America/Bogota")
 
 
 def get_target_calendar(tenant, calendar_id_arg):
-    if calendar_id_arg and ("@group.calendar.google.com" in calendar_id_arg or "@gmail.com" in calendar_id_arg):
+    if calendar_id_arg and (
+        "@group.calendar.google.com" in calendar_id_arg
+        or "@gmail.com" in calendar_id_arg
+    ):
         print(f"🎯 Usando calendario específico: {calendar_id_arg}")
         return calendar_id_arg.strip()
     return tenant["calendar_id"]
 
 
-async def check_availability(agent_id: str, date_str: str, asesor_calendar_id: str = None):
+async def check_availability(
+    agent_id: str, date_str: str, asesor_calendar_id: str = None
+):
     tenant = TENANTS.get(agent_id)
-    if not tenant: return "Error config."
+    if not tenant:
+        return "Error config."
 
     calendar_id = get_target_calendar(tenant, asesor_calendar_id)
 
     try:
         service = get_service("calendar", "v3", tenant["creds_file"])
         target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-        start_of_day = BOGOTA_TZ.localize(datetime.combine(target_date, datetime.min.time().replace(hour=8)))
-        end_of_day = BOGOTA_TZ.localize(datetime.combine(target_date, datetime.min.time().replace(hour=18)))
+        start_of_day = BOGOTA_TZ.localize(
+            datetime.combine(target_date, datetime.min.time().replace(hour=8))
+        )
+        end_of_day = BOGOTA_TZ.localize(
+            datetime.combine(target_date, datetime.min.time().replace(hour=18))
+        )
 
         body = {
             "timeMin": start_of_day.isoformat(),
@@ -54,12 +64,13 @@ async def check_availability(agent_id: str, date_str: str, asesor_calendar_id: s
                 if (current_slot < busy_end) and (slot_end > busy_start):
                     is_busy = True
                     break
-            
+
             if not is_busy:
                 available_slots.append(current_slot.strftime("%I:%M %p"))
             current_slot += timedelta(hours=1)
 
-        if not available_slots: return "Agenda llena para ese día."
+        if not available_slots:
+            return "Agenda llena para ese día."
         return f"Horarios disponibles: {', '.join(available_slots[:4])}."
 
     except Exception as e:
@@ -82,12 +93,16 @@ async def create_event_and_lock(agent_id: str, data: dict):
     end_dt = start_dt + timedelta(hours=buffer_hours)
 
     try:
-        events_check = service.events().list(
-            calendarId=calendar_id,
-            timeMin=start_dt.isoformat(),
-            timeMax=end_dt.isoformat(),
-            singleEvents=True,
-        ).execute()
+        events_check = (
+            service.events()
+            .list(
+                calendarId=calendar_id,
+                timeMin=start_dt.isoformat(),
+                timeMax=end_dt.isoformat(),
+                singleEvents=True,
+            )
+            .execute()
+        )
 
         if events_check.get("items"):
             print(f"⛔ Conflicto encontrado en {calendar_id}")
@@ -117,7 +132,8 @@ async def cancel_appointment(agent_id: str, client_phone: str):
     Busca la próxima cita activa escaneando TODOS los calendarios definidos en el Inventario.
     """
     tenant = TENANTS.get(agent_id)
-    if not tenant: return None
+    if not tenant:
+        return None
 
     service = get_service("calendar", "v3", tenant["creds_file"])
     phone_clean = client_phone.replace(" ", "").replace("+", "").strip()
@@ -128,35 +144,41 @@ async def cancel_appointment(agent_id: str, client_phone: str):
     # 1. OBTENER LISTA MAESTRA DE CALENDARIOS (INVENTARIO + DEFAULT)
     # Consultamos al inventario qué asesores existen
     advisor_calendars = await inventory.get_unique_calendar_ids(agent_id)
-    
+
     # Creamos un conjunto único para no escanear doble
     calendars_to_scan = set(advisor_calendars)
     calendars_to_scan.add(tenant["calendar_id"])
 
     print(f"🕵️ Iniciando Búsqueda para cancelar: {phone_clean}")
-    print(f"📅 Escaneando {len(calendars_to_scan)} calendarios: {list(calendars_to_scan)}")
+    print(
+        f"📅 Escaneando {len(calendars_to_scan)} calendarios: {list(calendars_to_scan)}"
+    )
 
     # 2. ESCANEAR CADA CALENDARIO
     for cal_id in calendars_to_scan:
         try:
-            events_result = service.events().list(
-                calendarId=cal_id,
-                timeMin=now_dt.isoformat(),
-                timeMax=future_limit.isoformat(),
-                singleEvents=True,
-                orderBy="startTime",
-                q=phone_clean, # Google busca el teléfono en todo el evento
-            ).execute()
-            
+            events_result = (
+                service.events()
+                .list(
+                    calendarId=cal_id,
+                    timeMin=now_dt.isoformat(),
+                    timeMax=future_limit.isoformat(),
+                    singleEvents=True,
+                    orderBy="startTime",
+                    q=phone_clean,  # Google busca el teléfono en todo el evento
+                )
+                .execute()
+            )
+
             items = events_result.get("items", [])
 
             if items:
                 event_to_cancel = items[0]
                 event_id = event_to_cancel["id"]
                 summary = event_to_cancel.get("summary", "")
-                
+
                 print(f"✅ Cita encontrada en {cal_id} | Evento: {summary}")
-                
+
                 # 3. BORRAR
                 service.events().delete(calendarId=cal_id, eventId=event_id).execute()
                 print(f"🗑️ Cita eliminada.")
@@ -166,19 +188,20 @@ async def cancel_appointment(agent_id: str, client_phone: str):
                 try:
                     dt_obj = datetime.fromisoformat(start_str)
                     fecha_humana = dt_obj.strftime("%d/%m/%Y a las %I:%M %p")
-                except: pass
-                
+                except:
+                    pass
+
                 return {
                     "evento_summary": summary,
                     "fecha_humana": fecha_humana,
                     "cliente_telefono": client_phone,
-                    "asesor_calendario_origen": cal_id
+                    "asesor_calendario_origen": cal_id,
                 }
 
         except Exception as e:
             # Si no tenemos permiso en un calendario específico, lo saltamos y seguimos con el siguiente
             print(f"⚠️ Saltando calendario {cal_id}: {e}")
             continue
-    
+
     print(f"⚠️ No se encontró cita para {phone_clean} en ningún calendario.")
     return None
