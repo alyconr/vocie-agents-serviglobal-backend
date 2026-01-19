@@ -53,9 +53,7 @@ async def receive_whatsapp_message(request: Request, background_tasks: Backgroun
             status = status_update.get("status")
             recipient = status_update.get("recipient_id")
 
-            print(
-                f"🚦 ESTADO ACTUALIZADO: ID={msg_id} | Status={status} | Para={recipient}"
-            )
+            print(f"🚦 ESTADO ACTUALIZADO: ID={msg_id} | Status={status} | Para={recipient}")
             return {"status": "ack_status_update"}
 
         # --- CASO B: MENSAJE ENTRANTE (CLIENTE ESCRIBE O PRESIONA BOTÓN) ---
@@ -66,39 +64,47 @@ async def receive_whatsapp_message(request: Request, background_tasks: Backgroun
 
             print(f"📩 MENSAJE RECIBIDO de {sender} ({msg_type})")
 
-            # MIRIADA: Procesar Texto o Respuesta Rápida (Quick Reply)
+            # FLAG PARA DETECTAR INTENCIÓN DE CANCELAR
+            should_cancel = False
+
+            # 1. SI ES TEXTO (O Quick Reply simple)
             if msg_type == "text":
                 text_body = message["text"]["body"].strip()
                 print(f"   Texto: {text_body}")
-
-                # --- LÓGICA DE CANCELACIÓN (NUEVA) ---
-                # Detectamos si el usuario escribió o presionó "Cancelar cita"
                 if text_body.lower() in ["cancelar cita", "cancelar"]:
-                    print(f"🛑 Solicitud de cancelación detectada para {sender}")
+                    should_cancel = True
 
-                    # 1. Seleccionar Agente (Fallback al primero de la lista)
-                    try:
-                        agent_id = list(TENANTS.keys())[0]
-                    except IndexError:
-                        print(
-                            "❌ Error crítico: No hay agentes configurados en TENANTS."
-                        )
-                        return {"status": "error", "message": "No agent configured"}
+            # 2. SI ES BOTÓN INTERACTIVO (Payload)
+            elif msg_type == "interactive":
+                interactive = message.get("interactive", {})
+                if interactive.get("type") == "button_reply":
+                    btn_id = interactive["button_reply"]["id"]
+                    btn_title = interactive["button_reply"]["title"]
+                    print(f"🔘 Botón presionado: ID={btn_id} | Title={btn_title}")
+                    
+                    # Verificamos ID o Texto del botón
+                    if btn_id == "CANCELAR_CITA" or btn_title.lower() in ["cancelar cita", "cancelar"]:
+                        should_cancel = True
 
-                    # 2. Ejecutar cancelación en calendario
-                    # sender es el teléfono (ej: 57300...)
-                    canceled_data = await calendar.cancel_appointment(agent_id, sender)
+            # --- EJECUCIÓN CENTRALIZADA DE CANCELACIÓN ---
+            if should_cancel:
+                print(f"🛑 Solicitud de cancelación detectada para {sender}")
+                
+                # Seleccionar Agente
+                try:
+                    agent_id = list(TENANTS.keys())[0]
+                except IndexError:
+                    print("❌ Error crítico: No hay agentes configurados.")
+                    return {"status": "error"}
 
-                    if canceled_data:
-                        # 3. Notificar si hubo éxito
-                        background_tasks.add_task(
-                            notifications.notify_cancellation, agent_id, canceled_data
-                        )
-                        print(
-                            "✅ Cancelación procesada y tarea de notificación encolada."
-                        )
-                    else:
-                        print("⚠️ No se encontró cita futura para cancelar.")
+                # Ejecutar cancelación
+                canceled_data = await calendar.cancel_appointment(agent_id, sender)
+
+                if canceled_data:
+                    background_tasks.add_task(notifications.notify_cancellation, agent_id, canceled_data)
+                    print("✅ Cancelación procesada y tarea de notificación encolada.")
+                else:
+                    print("⚠️ No se encontró cita futura para cancelar.")
 
             return {"status": "message_received"}
 
@@ -134,28 +140,19 @@ async def retell_webhook(request: Request, bg_tasks: BackgroundTasks):
         keys = args.keys()
         user_text = str(args.get("user_message", "")).lower()
 
-        if (
-            "cancelar" in user_text
-            or args.get("action") == "cancel_appointment"
-            or "cancelar" in str(payload)
-        ):
+        if "cancelar" in user_text or args.get("action") == "cancel_appointment" or "cancelar" in str(payload):
             func_name = "cancel_appointment"
-        elif "cliente_telefono" in keys or (
-            "cliente_nombre" in keys and "fecha_hora_inicio" in keys
-        ):
+        elif "cliente_telefono" in keys or ("cliente_nombre" in keys and "fecha_hora_inicio" in keys):
             func_name = "book_appointment_and_notify"
         elif "ciudad" in keys or "tipo_operacion" in keys or "presupuesto_max" in keys:
             func_name = "search_inventory"
         elif "fecha" in keys or "asesor_calendar_id" in keys:
             func_name = "check_calendar_availability"
-
+        
         # Fallback final
-        elif "presupuesto_max" in args:
-            func_name = "search_inventory"
-        elif "cliente_telefono" in args:
-            func_name = "book_appointment_and_notify"
-        elif "fecha" in args:
-            func_name = "check_calendar_availability"
+        elif "presupuesto_max" in args: func_name = "search_inventory"
+        elif "cliente_telefono" in args: func_name = "book_appointment_and_notify"
+        elif "fecha" in args: func_name = "check_calendar_availability"
 
         print(f"🕵️ Función inferida: {func_name}")
 
@@ -171,16 +168,13 @@ async def retell_webhook(request: Request, bg_tasks: BackgroundTasks):
         if func_name == "check_calendar_availability":
             fecha = args.get("fecha")
             cal_id = args.get("asesor_calendar_id") or args.get("asesor_email")
-            if not fecha:
-                return {"result": "¿Para qué fecha?"}
-            return {
-                "result": await calendar.check_availability(agent_id, fecha, cal_id)
-            }
+            if not fecha: return {"result": "¿Para qué fecha?"}
+            return {"result": await calendar.check_availability(agent_id, fecha, cal_id)}
 
         if func_name == "book_appointment_and_notify":
             if not args.get("cliente_telefono"):
                 return {"result": "Necesito confirmar tu número de WhatsApp."}
-
+            
             success = await calendar.create_event_and_lock(agent_id, args)
             if success:
                 bg_tasks.add_task(notifications.notify_all_parties, agent_id, args)
@@ -191,17 +185,12 @@ async def retell_webhook(request: Request, bg_tasks: BackgroundTasks):
 
         if func_name == "cancel_appointment":
             phone = args.get("cliente_telefono") or args.get("from_number")
-            if not phone:
-                return {"result": "No identifiqué tu número."}
-
+            if not phone: return {"result": "No identifiqué tu número."}
+            
             cancel_result = await calendar.cancel_appointment(agent_id, phone)
             if cancel_result:
-                bg_tasks.add_task(
-                    notifications.notify_cancellation, agent_id, cancel_result, args
-                )
-                return {
-                    "result": f"Cita cancelada: {cancel_result.get('evento_summary', '')}."
-                }
+                bg_tasks.add_task(notifications.notify_cancellation, agent_id, cancel_result, args)
+                return {"result": f"Cita cancelada: {cancel_result.get('evento_summary', '')}."}
             else:
                 return {"result": "No encontré ninguna cita futura."}
 

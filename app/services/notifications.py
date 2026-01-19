@@ -3,7 +3,6 @@ import smtplib
 import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from email.header import Header  # <--- NUEVO IMPORT CRÍTICO
 from datetime import datetime
 import locale
 from app.config import GLOBAL_WA_TOKEN, GLOBAL_WA_PHONE_ID, TENANTS
@@ -23,10 +22,10 @@ async def notify_all_parties(agent_id: str, data: dict):
     Orquesta el envío de WhatsApps y Correos Electrónicos.
     """
     tenant = TENANTS.get(agent_id)
-    print(f"🔔 Notificando partes para agente {tenant.get('name')}...")
-
     if not tenant:
         return
+
+    print(f"🔔 Notificando partes para {tenant.get('name')}...")
 
     # 1. Datos base
     token = os.getenv("WHATSAPP_TOKEN", GLOBAL_WA_TOKEN)
@@ -48,10 +47,9 @@ async def notify_all_parties(agent_id: str, data: dict):
     propiedad = data.get("propiedad_interes", "Propiedad")
     cliente_nombre = data.get("cliente_nombre", "Cliente")
     asesor_nombre = data.get("asesor_nombre", "Asesor")
-
+    
     # --- 2. ENVIAR WHATSAPP ---
     if token and phone_id:
-        print(f"📲 Enviando WhatsApps a {data.get('cliente_telefono')} y asesor...")
         # Al Cliente
         if data.get("cliente_telefono"):
             await send_whatsapp(
@@ -75,8 +73,6 @@ async def notify_all_parties(agent_id: str, data: dict):
                 token=token,
                 phone_id=phone_id,
             )
-    else:
-        print("⚠️ Token o Phone ID de WhatsApp no configurado; no se envió WhatsApp.")
 
     # --- 3. ENVIAR CORREOS ELECTRÓNICOS ---
     asunto = f"Confirmación Cita: {propiedad} - {fecha_humana}"
@@ -92,11 +88,9 @@ async def notify_all_parties(agent_id: str, data: dict):
     <p>Nos vemos pronto.<br>Equipo {tenant['name']}</p>
     """
 
-    # Enviar al Cliente
     if cliente_email and "@" in cliente_email:
         send_email_smtp(to_email=cliente_email, subject=asunto, body_html=mensaje_html)
 
-    # Enviar al Asesor (Copia)
     if asesor_email and "@" in asesor_email:
         asunto_asesor = f"🔔 NUEVA CITA: {cliente_nombre} - {fecha_humana}"
         mensaje_asesor = f"""
@@ -113,7 +107,6 @@ async def notify_all_parties(agent_id: str, data: dict):
             to_email=asesor_email, subject=asunto_asesor, body_html=mensaje_asesor
         )
 
-    # Enviar al Dueño (Copia Oculta)
     owner_email = tenant.get("owner_email")
     if owner_email and "@" in owner_email and owner_email != asesor_email:
         asunto_owner = f"🔔 NUEVA CITA Agendada - {cliente_nombre}"
@@ -162,15 +155,15 @@ async def send_whatsapp(
 
 def send_email_smtp(to_email, subject, body_html):
     """
-    Envía correo usando servidor SMTP con codificación UTF-8 explícita.
+    Envía correo usando servidor SMTP.
+    Versión simplificada para evitar errores de Compat32 con UTF-8.
     """
     smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
     port_env = os.getenv("SMTP_PORT")
-
+    
     try:
         smtp_port = int(port_env) if port_env and port_env.strip() else 587
     except ValueError:
-        print(f"⚠️ Puerto SMTP inválido ('{port_env}'). Usando 587.")
         smtp_port = 587
 
     smtp_user = os.getenv("SMTP_EMAIL")
@@ -184,13 +177,11 @@ def send_email_smtp(to_email, subject, body_html):
         msg = MIMEMultipart()
         msg["From"] = f"Inmobiliaria Bot <{smtp_user}>"
         msg["To"] = to_email
-
-        # --- CORRECCIÓN UTF-8 (Header) ---
-        # Esto permite Emojis (🚫, 🔔) y tildes en el Asunto sin romper Compat32
-        msg["Subject"] = Header(subject, "utf-8")
-
-        # --- CORRECCIÓN UTF-8 (Body) ---
-        # Especificamos "utf-8" explícitamente al crear el objeto MIMEText
+        
+        # --- CORRECCIÓN: Asignación directa (Python 3 maneja UTF-8 nativo en headers) ---
+        msg["Subject"] = subject
+        
+        # El cuerpo sí lo declaramos explícitamente como utf-8
         msg.attach(MIMEText(body_html, "html", "utf-8"))
 
         server = smtplib.SMTP(smtp_server, smtp_port)
@@ -220,9 +211,9 @@ async def notify_cancellation(
 
     fecha_humana = cancel_data.get("fecha_humana", "Fecha desconocida")
     cliente_telefono = cancel_data.get("cliente_telefono", "")
-    asesor_nombre = cancel_data.get("asesor_nombre", "")
     summary = cancel_data.get("evento_summary", "")
 
+    # Intentar sacar nombre del summary "CITA: Nombre - Propiedad"
     cliente_nombre = "Cliente"
     if "CITA:" in summary:
         try:
@@ -255,8 +246,8 @@ async def notify_cancellation(
                 params=[
                     cliente_nombre,
                     fecha_humana,
-                    asesor_nombre,
-                    "Cancelado por el cliente vía WhatsApp (Quick Reply)",
+                    "No asignado", # Asesor nombre placeholder
+                    "Cancelado por el cliente vía WhatsApp",
                 ],
                 token=token,
                 phone_id=phone_id,
@@ -274,42 +265,28 @@ async def notify_cancellation(
         """
         send_email_smtp(cliente_email, asunto_cli, body_cli)
 
-    # 2. Al Dueño (Owner)
+    # 2. Al Dueño / Asesor (Notificación Interna)
     owner_email = tenant.get("owner_email")
-    if owner_email:
-        asunto_owner = f"🚫 CITA CANCELADA: {cliente_nombre}"
-        body_owner = f"""
-        <h3>Aviso de Cancelación</h3>
-        <ul>
-            <li><strong>Cliente:</strong> {cliente_nombre}</li>
-            <li><strong>Teléfono:</strong> {cliente_telefono}</li>
-            <li><strong>Fecha cancelada:</strong> {fecha_humana}</li>
-            <li><strong>Origen:</strong> WhatsApp Automático</li>
-        </ul>
-        """
-        send_email_smtp(owner_email, asunto_owner, body_owner)
-
-    # 3. Al Asesor (Si aplica)
+    
+    # Intentar detectar asesor responsable desde el evento
     asesor_email = None
     if "CITA:" in summary:
         try:
-            parts = summary.replace("CITA:", "").split("-")
-            if len(parts) > 1:
-                # Intenta encontrar email en el summary si se guardó ahí (opcional)
-                candidate = parts[1].strip()
-                if "@" in candidate:
-                    asesor_email = candidate
+            # Si el summary es "CITA: Juan - Propiedad", a veces no tiene el email.
+            # Pero si tu lógica anterior funcionaba con el ID del calendario origen:
+            cal_origen = cancel_data.get("asesor_calendario_origen")
+            if cal_origen and "@" in cal_origen:
+                asesor_email = cal_origen
         except:
             pass
 
-    # Fallback: Si no hay asesor específico, usamos el owner como "encargado" para no perder la alerta
-    if not asesor_email and owner_email:
-        asesor_email = owner_email
+    destinatarios_internos = set()
+    if owner_email: destinatarios_internos.add(owner_email)
+    if asesor_email: destinatarios_internos.add(asesor_email)
 
-    # Solo enviamos si NO es el mismo que el owner (para no duplicar si es la misma persona)
-    if asesor_email and asesor_email != owner_email:
-        asunto_asesor = f"🚫 CITA CANCELADA: {cliente_nombre}"
-        body_asesor = f"""
+    for email_destino in destinatarios_internos:
+        asunto_interno = f"🚫 CITA CANCELADA: {cliente_nombre}"
+        body_interno = f"""
         <h3>Aviso de Cancelación</h3>
         <ul>
             <li><strong>Cliente:</strong> {cliente_nombre}</li>
@@ -318,4 +295,4 @@ async def notify_cancellation(
             <li><strong>Origen:</strong> WhatsApp Automático</li>
         </ul>
         """
-        send_email_smtp(asesor_email, asunto_asesor, body_asesor)
+        send_email_smtp(email_destino, asunto_interno, body_interno)
