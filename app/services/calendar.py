@@ -163,6 +163,8 @@ async def cancel_appointment(agent_id: str, client_phone: str):
         )
         items = events_result.get("items", [])
 
+        print(f"🔍 Eventos encontrados para {client_phone}: {items}")
+
         if not items:
             print(f"⚠️ No se encontró cita futura para {client_phone}")
             return None
