@@ -147,9 +147,12 @@ async def cancel_appointment(agent_id: str, client_phone: str):
     # Buscar hasta 30 días en el futuro (o lo que se considere "próxima cita")
     future_limit = now_dt + timedelta(days=60)
 
+    print(f"🕵️ Buscando en calendario ID: {calendar_id} | Query: {client_phone}")
+
     try:
         # 1. LISTAR EVENTOS FUTUROS
-        events_result = (
+        # DEBUG: Quitamos el filtro q= para ver si el evento existe pero no hace match
+        events_check = (
             service.events()
             .list(
                 calendarId=calendar_id,
@@ -157,13 +160,26 @@ async def cancel_appointment(agent_id: str, client_phone: str):
                 timeMax=future_limit.isoformat(),
                 singleEvents=True,
                 orderBy="startTime",
-                q=client_phone,  # Buscamos el teléfono en description o summary
+                # q=client_phone,  <-- COMENTADO TEMPORALMENTE PARA DEBUG
             )
             .execute()
         )
-        items = events_result.get("items", [])
+        all_items = events_check.get("items", [])
 
-        print(f"🔍 Eventos encontrados para {client_phone}: {items}")
+        # Filtro manual para debug y por si Google 'q' falla
+        items = []
+        print(f"📊 Total eventos encontrados en rango: {len(all_items)}")
+        for ev in all_items:
+            # Chequeo manual
+            desc = ev.get("description", "")
+            summ = ev.get("summary", "")
+            if client_phone in desc or client_phone in summ:
+                items.append(ev)
+            else:
+                # Debug de eventos que NO hicieron match
+                pass  # print(f"  - Ignorado: {summ}")
+
+        print(f"🔍 Eventos filtrados manualmente para {client_phone}: {len(items)}")
 
         if not items:
             print(f"⚠️ No se encontró cita futura para {client_phone}")
