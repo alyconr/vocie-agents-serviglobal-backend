@@ -84,8 +84,35 @@ async def receive_whatsapp_message(request: Request):
 
             return {"status": "message_received"}
 
+        elif "messages" in value and value["messages"][0]["type"] == "interactive":
+            message = value["messages"][0]
+            sender = message.get("from") # El teléfono del cliente
+            interactive = message.get("interactive")
+            
+            if interactive["type"] == "button_reply":
+                button_id = interactive["button_reply"]["id"]
+                print(f"🔘 BOTÓN PRESIONADO: {button_id} por {sender}")
+
+                # LÓGICA DE CANCELACIÓN
+                if button_id == "CANCELAR_CITA":
+                    # Usamos el primer agente por defecto o buscamos lógica para saber cuál es
+                    agent_id = list(TENANTS.keys())[0] 
+                    
+                    # 1. Ejecutar cancelación en calendario
+                    canceled_data = await calendar.find_and_cancel_appointment(agent_id, sender)
+                    
+                    if canceled_data:
+                        # 2. Notificar
+                        bg_tasks.add_task(notifications.notify_cancellation, agent_id, canceled_data)
+                        print("✅ Proceso de cancelación iniciado.")
+                    else:
+                        # Opcional: Enviar mensaje de texto diciendo "No encontré citas pendientes"
+                        print("⚠️ No se encontró cita para cancelar.")
+
+            return {"status": "interactive_processed"}
+
         else:
-            return {"status": "ignored", "reason": "unknown_event"}
+            return {"status": "ignored", "reason": "unknown_event"} 
 
     except Exception as e:
         print(f"❌ Error procesando Webhook: {e}")
