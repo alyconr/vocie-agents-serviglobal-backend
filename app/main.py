@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 # Importación de servicios internos
 from app.services import inventory, calendar, notifications, crm
-from app.config import WHATSAPP_VERIFY_TOKEN, TENANTS
+from app.config import GLOBAL_WA_TOKEN, TENANTS
 
 # Cargar variables de entorno
 load_dotenv()
@@ -109,7 +109,7 @@ async def verify_whatsapp(request: Request):
     challenge = params.get("hub.challenge")
 
     if mode and token:
-        if mode == "subscribe" and token == WHATSAPP_VERIFY_TOKEN:
+        if mode == "subscribe" and token == GLOBAL_WA_TOKEN:
             print("✅ Webhook de WhatsApp verificado.")
             return PlainTextResponse(content=challenge, status_code=200)
         else:
