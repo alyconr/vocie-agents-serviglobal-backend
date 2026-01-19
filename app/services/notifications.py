@@ -147,6 +147,8 @@ async def notify_cancellation(agent_id: str, data: dict):
     tenant = TENANTS.get(agent_id)
     if not tenant:
         return
+    
+    print(f"🔔 Enviando notificaciones de cancelación para {data.get('cliente_nombre')}")
 
     token = os.getenv("WHATSAPP_TOKEN", GLOBAL_WA_TOKEN)
     phone_id = os.getenv("WHATSAPP_PHONE_ID", GLOBAL_WA_PHONE_ID)
