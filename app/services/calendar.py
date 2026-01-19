@@ -128,3 +128,79 @@ async def create_event_and_lock(agent_id: str, data: dict):
     except Exception as e:
         print(f"Error Calendar Insert: {e}")
         return False
+
+
+async def cancel_appointment(agent_id: str, client_phone: str):
+    """
+    Busca la próxima cita activa asociada al número de teléfono y la cancela via delete().
+    Retorna un dict con los datos del evento cancelado para notificaciones, o None si no encontró.
+    """
+    tenant = TENANTS.get(agent_id)
+    if not tenant:
+        print("❌ Tenant no encontrado para cancelar cita.")
+        return None
+
+    calendar_id = tenant["calendar_id"]
+    service = get_service("calendar", "v3", tenant["creds_file"])
+
+    now_dt = datetime.now(BOGOTA_TZ)
+    # Buscar hasta 30 días en el futuro (o lo que se considere "próxima cita")
+    future_limit = now_dt + timedelta(days=60)
+
+    try:
+        # 1. LISTAR EVENTOS FUTUROS
+        events_result = (
+            service.events()
+            .list(
+                calendarId=calendar_id,
+                timeMin=now_dt.isoformat(),
+                timeMax=future_limit.isoformat(),
+                singleEvents=True,
+                orderBy="startTime",
+                q=client_phone,  # Buscamos el teléfono en description o summary
+            )
+            .execute()
+        )
+        items = events_result.get("items", [])
+
+        if not items:
+            print(f"⚠️ No se encontró cita futura para {client_phone}")
+            return None
+
+        # Tomamos el primero (más próximo)
+        event_to_cancel = items[0]
+        event_id = event_to_cancel["id"]
+
+        # Extraer datos para notificación antes de borrar
+        summary = event_to_cancel.get("summary", "")
+        description = event_to_cancel.get("description", "")
+        start_str = event_to_cancel.get("start", {}).get("dateTime", "")
+
+        # Intentar parsear hora
+        fecha_humana = start_str
+        try:
+            dt_obj = datetime.fromisoformat(start_str)
+            fecha_humana = dt_obj.strftime("%d/%m/%Y a las %I:%M %p")
+        except:
+            pass
+
+        # Extraer email cliente del description si es posible, o retornarlo como None
+        # En create_event metemos: "Tel: ...\nAsesor: ..."
+        # Si no guardamos email en description, tocaría pasarlo en 'data' al origen si está disponible.
+        # Por ahora extraemos lo que hay.
+
+        # 2. BORRAR EVENTO
+        service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
+        print(f"✅ Cita cancelada: {summary} ({event_id})")
+
+        return {
+            "evento_summary": summary,
+            "evento_description": description,
+            "fecha_humana": fecha_humana,
+            "cliente_telefono": client_phone,
+            # Se intentará parsear más datos en notifications si es necesario
+        }
+
+    except Exception as e:
+        print(f"❌ Error cancelando cita: {e}")
+        return None

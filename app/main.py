@@ -146,6 +146,21 @@ async def retell_webhook(request: Request, bg_tasks: BackgroundTasks):
         elif "fecha" in args:
             func_name = "check_calendar_availability"
 
+        # --- AÑADIDO: Detectar cancelación por texto o payload ---
+        # Si el usuario dice "Cancelar cita", "cancelar", o boton quick reply "CANCEL_APPOINTMENT"
+        # Nota: Retell a veces manda 'transcript' o 'user_message'.
+        # Si es un botón quick reply de WhatsApp, el payload puede venir en un campo específico segun como Retell lo pase.
+        # Asumiremos que si 'message' o 'accion' dice 'cancelar', es esto.
+
+        user_text = str(args.get("user_message", "")).lower()
+        if (
+            "cancelar" in user_text
+            or args.get("action") == "cancel_appointment"
+            or "cancelar" in str(payload)
+        ):
+            if func_name is None:  # Si no se ha decidido antes
+                func_name = "cancel_appointment"
+
         print(f"🕵️ Función inferida: {func_name}")
 
         # 3. Validación final antes de ejecutar
@@ -200,6 +215,30 @@ async def retell_webhook(request: Request, bg_tasks: BackgroundTasks):
                     return {
                         "result": "Ese horario ya está ocupado. ¿Te sirve otra hora?"
                     }
+
+        if func_name == "cancel_appointment":
+            # Necesitamos el telefono. Si Retell lo manda como 'from_number' o 'cliente_telefono'
+            phone = args.get("cliente_telefono") or args.get("from_number")
+
+            if not phone:
+                return {
+                    "result": "No identifiqué tu número de teléfono para buscar la cita."
+                }
+
+            cancel_result = await calendar.cancel_appointment(agent_id, phone)
+
+            if cancel_result:
+                # Enviar notificaciones
+                bg_tasks.add_task(
+                    notifications.notify_cancellation, agent_id, cancel_result, args
+                )
+                return {
+                    "result": f"Cita cancelada: {cancel_result['evento_summary']}. Te enviamos confirmación."
+                }
+            else:
+                return {
+                    "result": "No encontré ninguna cita futura agendada con tu número."
+                }
 
         return {"result": f"Función {func_name} no encontrada."}
 

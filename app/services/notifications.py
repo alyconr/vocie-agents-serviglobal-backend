@@ -206,3 +206,111 @@ def send_email_smtp(to_email, subject, body_html):
         print(f"📧 Correo enviado exitosamente a {to_email}")
     except Exception as e:
         print(f"❌ Error enviando correo: {e}")
+
+
+async def notify_cancellation(
+    agent_id: str, cancel_data: dict, origin_data: dict = None
+):
+    """
+    Notifica la cancelación vía WhatsApp y Email.
+    cancel_data: viene de calendar.cancel_appointment (datos del evento borrado)
+    origin_data: datos adicionales que podamos tener (ej. email cliente si vino en el payload del webhook)
+    """
+    tenant = TENANTS.get(agent_id)
+    if not tenant:
+        return
+
+    print(f"🔕 Iniciando notificaciones de cancelación para {tenant['name']}...")
+
+    token = os.getenv("WHATSAPP_TOKEN", GLOBAL_WA_TOKEN)
+    phone_id = os.getenv("WHATSAPP_PHONE_ID", GLOBAL_WA_PHONE_ID)
+
+    # 1. Recuperar datos clave
+    fecha_humana = cancel_data.get("fecha_humana", "Fecha desconocida")
+    cliente_telefono = cancel_data.get("cliente_telefono", "")
+    asesor_nombre = cancel_data.get("asesor_nombre", "")
+
+    # Intentar sacar nombre cliente y asesor del summary/description del evento
+    # Format summary: "CITA: {cliente_nombre} - {propiedad}"
+    # Format description: "Cliente: ... \nTel: ... \nAsesor: ..."
+
+    summary = cancel_data.get("evento_summary", "")
+    description = cancel_data.get("evento_description", "")
+
+    cliente_nombre = "Cliente"
+    if "CITA:" in summary:
+        try:
+            parts = summary.replace("CITA:", "").split("-")
+            cliente_nombre = parts[0].strip()
+        except:
+            pass
+
+    # Intentar sacar email cliente de origin_data si existe
+    cliente_email = None
+    if origin_data:
+        cliente_email = origin_data.get("cliente_email")
+
+    # Asesor email?
+    asesor_email = (
+        None  # Se podría intentar parsear del description si se guardara el email allá
+    )
+
+    # --- 2. ENVIAR WHATSAPP CANCELACIÓN ---
+    if token and phone_id:
+
+        # A. Al Cliente (cita_cancelada_cliente)
+        # Params plantilla: {{1}} nombre cliente, {{2}} fecha cita, {{3}} nombre inmobiliaria
+        if cliente_telefono:
+            print(f"📲 Enviando WhatsApp Cancelación a Cliente {cliente_telefono}")
+            await send_whatsapp(
+                to=cliente_telefono,
+                template="cita_cancelada_cliente",  # Asegurarse que este nombre coincida con Meta
+                params=[cliente_nombre, fecha_humana],
+                token=token,
+                phone_id=phone_id,
+            )
+
+        # B. Al Dueño / Asesor (alerta_cancelacion_owner)
+        # Params plantilla: {{1}} nombre cliente, {{2}} fecha cita, {{3}} motivo/info extra
+        if tenant.get("owner_phone"):
+            print(f"📲 Enviando WhatsApp Cancelación a Owner {tenant['owner_phone']}")
+            await send_whatsapp(
+                to=tenant["owner_phone"],
+                template="alerta_cancelacion_owner",
+                params=[
+                    cliente_nombre,
+                    fecha_humana,
+                    asesor_nombre,
+                    "Cancelado por el cliente vía WhatsApp (Quick Reply)",
+                ],
+                token=token,
+                phone_id=phone_id,
+            )
+
+    # --- 3. ENVIAR EMAILS DE CANCELACIÓN ---
+
+    # A. Cliente
+    if cliente_email:
+        asunto_cli = f"Cita Cancelada: {fecha_humana}"
+        body_cli = f"""
+        <h2>Hola {cliente_nombre},</h2>
+        <p>Confirmamos que tu cita programada para el <strong>{fecha_humana}</strong> ha sido cancelada exitosamente.</p>
+        <p>Si deseas reagendar, no dudes en escribirnos nuevamente.</p>
+        <p>Saludos,<br>{tenant['name']}</p>
+        """
+        send_email_smtp(cliente_email, asunto_cli, body_cli)
+
+    # B. Asesor / Inmobiliaria
+    owner_email = tenant.get("owner_email")
+    if owner_email:
+        asunto_owner = f"🚫 CITA CANCELADA: {cliente_nombre}"
+        body_owner = f"""
+        <h3>Aviso de Cancelación</h3>
+        <ul>
+            <li><strong>Cliente:</strong> {cliente_nombre}</li>
+            <li><strong>Teléfono:</strong> {cliente_telefono}</li>
+            <li><strong>Fecha cancelada:</strong> {fecha_humana}</li>
+            <li><strong>Origen:</strong> WhatsApp Automático</li>
+        </ul>
+        """
+        send_email_smtp(owner_email, asunto_owner, body_owner)
