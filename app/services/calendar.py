@@ -35,10 +35,10 @@ async def check_availability(
 
         target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
         start_of_day = BOGOTA_TZ.localize(
-            datetime.combine(target_date, datetime.min.time().replace(hour=9))
+            datetime.combine(target_date, datetime.min.time().replace(hour=8))
         )
         end_of_day = BOGOTA_TZ.localize(
-            datetime.combine(target_date, datetime.min.time().replace(hour=17))
+            datetime.combine(target_date, datetime.min.time().replace(hour=18))
         )
 
         body = {
@@ -53,7 +53,6 @@ async def check_availability(
             busy_slots = events_result["calendars"][calendar_id]["busy"]
         except Exception as e:
             print(f"⚠️ Error permisos calendario {calendar_id}: {e}")
-            # Fallback al calendario principal si falla el específico
             return "No pude sincronizar la agenda específica, intentemos una general."
 
         available_slots = []
@@ -65,6 +64,7 @@ async def check_availability(
             for busy in busy_slots:
                 busy_start = datetime.fromisoformat(busy["start"])
                 busy_end = datetime.fromisoformat(busy["end"])
+                # Lógica de colisión simple
                 if (current_slot < busy_end) and (slot_end > busy_start):
                     is_busy = True
                     break
@@ -76,7 +76,7 @@ async def check_availability(
         if not available_slots:
             return "Agenda llena para ese día."
 
-        return f"Horarios disponibles: {', '.join(available_slots[:3])}."
+        return f"Horarios disponibles: {', '.join(available_slots[:4])}."
 
     except Exception as e:
         print(f"❌ Error Availability: {e}")
@@ -87,31 +87,40 @@ async def create_event_and_lock(agent_id: str, data: dict):
     tenant = TENANTS.get(agent_id)
     service = get_service("calendar", "v3", tenant["creds_file"])
 
-    # Usamos el ID específico
+    # Usamos el ID específico del asesor si viene
     calendar_id = get_target_calendar(tenant, data.get("asesor_calendar_id"))
 
     try:
         dt_naive = datetime.fromisoformat(data["fecha_hora_inicio"])
-        start_dt = BOGOTA_TZ.localize(dt_naive) if dt_naive.tzinfo is None else dt_naive
+        start_dt = (
+            BOGOTA_TZ.localize(dt_naive) if dt_naive.tzinfo is None else dt_naive
+        )
     except ValueError:
         return False
 
-    buffer_hours = tenant.get("appointment_buffer_hours", 2)
+    buffer_hours = tenant.get("appointment_buffer_hours", 1)
     end_dt = start_dt + timedelta(hours=buffer_hours)
 
     # 1. VERIFICAR CONFLICTO EN CALENDARIO ESPECÍFICO
-    events_check = (
-        service.events()
-        .list(
-            calendarId=calendar_id,
-            timeMin=start_dt.isoformat(),
-            timeMax=end_dt.isoformat(),
-            singleEvents=True,
+    try:
+        events_check = (
+            service.events()
+            .list(
+                calendarId=calendar_id,
+                timeMin=start_dt.isoformat(),
+                timeMax=end_dt.isoformat(),
+                singleEvents=True,
+            )
+            .execute()
         )
-        .execute()
-    )
 
-    if events_check.get("items"):
+        if events_check.get("items"):
+            print(f"⛔ Conflicto encontrado en {calendar_id}")
+            return False
+    except Exception as e:
+        print(f"⚠️ Error verificando conflicto en {calendar_id}: {e}")
+        # Si falla el específico, podríamos intentar el general, o abortar.
+        # Por seguridad, abortamos para no sobreagendar.
         return False
 
     # 2. CREAR EVENTO
@@ -124,101 +133,106 @@ async def create_event_and_lock(agent_id: str, data: dict):
 
     try:
         service.events().insert(calendarId=calendar_id, body=event).execute()
+        print(f"✅ Evento creado en {calendar_id}")
         return True
     except Exception as e:
-        print(f"Error Calendar Insert: {e}")
+        print(f"❌ Error Calendar Insert: {e}")
         return False
 
 
 async def cancel_appointment(agent_id: str, client_phone: str):
     """
-    Busca la próxima cita activa asociada al número de teléfono y la cancela via delete().
-    Retorna un dict con los datos del evento cancelado para notificaciones, o None si no encontró.
+    Busca la próxima cita activa asociada al teléfono en TODOS los calendarios accesibles.
+    Retorna los datos del evento eliminado o None.
     """
     tenant = TENANTS.get(agent_id)
     if not tenant:
-        print("❌ Tenant no encontrado para cancelar cita.")
+        print("❌ Tenant no encontrado.")
         return None
 
-    calendar_id = tenant["calendar_id"]
     service = get_service("calendar", "v3", tenant["creds_file"])
+    
+    # Limpiamos el teléfono
+    phone_clean = client_phone.replace(" ", "").replace("+", "").strip()
 
     now_dt = datetime.now(BOGOTA_TZ)
-    # Buscar hasta 30 días en el futuro (o lo que se considere "próxima cita")
-    future_limit = now_dt + timedelta(days=60)
+    future_limit = now_dt + timedelta(days=60) # Buscar hasta 2 meses adelante
 
-    print(f"🕵️ Buscando en calendario ID: {calendar_id} | Query: {client_phone}")
+    print(f"🕵️ Iniciando Búsqueda Multi-Calendario para cancelar: {phone_clean}")
 
     try:
-        # 1. LISTAR EVENTOS FUTUROS
-        # DEBUG: Quitamos el filtro q= para ver si el evento existe pero no hace match
-        events_check = (
-            service.events()
-            .list(
-                calendarId=calendar_id,
-                timeMin=now_dt.isoformat(),
-                timeMax=future_limit.isoformat(),
-                singleEvents=True,
-                orderBy="startTime",
-                # q=client_phone,  <-- COMENTADO TEMPORALMENTE PARA DEBUG
-            )
-            .execute()
-        )
-        all_items = events_check.get("items", [])
+        # PASO 1: Obtener lista de TODOS los calendarios accesibles por el Service Account
+        calendar_list_result = service.calendarList().list().execute()
+        calendar_items = calendar_list_result.get("items", [])
+        
+        # Filtramos solo aquellos donde tenemos permiso de escritura ('writer' o 'owner')
+        # para no perder tiempo buscando en calendarios de solo lectura (como festivos).
+        writable_calendars = [
+            cal['id'] for cal in calendar_items 
+            if cal.get('accessRole') in ['writer', 'owner']
+        ]
 
-        # Filtro manual para debug y por si Google 'q' falla
-        items = []
-        print(f"📊 Total eventos encontrados en rango: {len(all_items)}")
-        for ev in all_items:
-            # Chequeo manual
-            desc = ev.get("description", "")
-            summ = ev.get("summary", "")
-            if client_phone in desc or client_phone in summ:
-                items.append(ev)
-            else:
-                # Debug de eventos que NO hicieron match
-                pass  # print(f"  - Ignorado: {summ}")
+        # Aseguramos que el calendario default esté en la lista por si acaso
+        if tenant["calendar_id"] not in writable_calendars:
+            writable_calendars.append(tenant["calendar_id"])
 
-        print(f"🔍 Eventos filtrados manualmente para {client_phone}: {len(items)}")
+        print(f"📅 Calendarios a escanear ({len(writable_calendars)}): {writable_calendars}")
 
-        if not items:
-            print(f"⚠️ No se encontró cita futura para {client_phone}")
-            return None
+        # PASO 2: Iterar y buscar el evento
+        for cal_id in writable_calendars:
+            try:
+                # Buscamos eventos donde aparezca el teléfono (Query libre 'q')
+                events_result = (
+                    service.events()
+                    .list(
+                        calendarId=cal_id,
+                        timeMin=now_dt.isoformat(),
+                        timeMax=future_limit.isoformat(),
+                        singleEvents=True,
+                        orderBy="startTime",
+                        q=phone_clean, # Google busca este string en todo el evento
+                    )
+                    .execute()
+                )
+                
+                items = events_result.get("items", [])
 
-        # Tomamos el primero (más próximo)
-        event_to_cancel = items[0]
-        event_id = event_to_cancel["id"]
+                if items:
+                    # ¡ENCONTRADO!
+                    event_to_cancel = items[0]
+                    event_id = event_to_cancel["id"]
+                    summary = event_to_cancel.get("summary", "")
+                    
+                    print(f"✅ Cita encontrada en calendario: {cal_id} | Evento: {summary}")
+                    
+                    # PASO 3: Borrar Evento
+                    service.events().delete(calendarId=cal_id, eventId=event_id).execute()
+                    print(f"🗑️ Cita eliminada exitosamente.")
 
-        # Extraer datos para notificación antes de borrar
-        summary = event_to_cancel.get("summary", "")
-        description = event_to_cancel.get("description", "")
-        start_str = event_to_cancel.get("start", {}).get("dateTime", "")
+                    # Preparar respuesta
+                    start_str = event_to_cancel.get("start", {}).get("dateTime", "")
+                    fecha_humana = start_str
+                    try:
+                        dt_obj = datetime.fromisoformat(start_str)
+                        fecha_humana = dt_obj.strftime("%d/%m/%Y a las %I:%M %p")
+                    except:
+                        pass
+                    
+                    return {
+                        "evento_summary": summary,
+                        "fecha_humana": fecha_humana,
+                        "cliente_telefono": client_phone,
+                        "asesor_calendario_origen": cal_id # Dato útil para debug
+                    }
 
-        # Intentar parsear hora
-        fecha_humana = start_str
-        try:
-            dt_obj = datetime.fromisoformat(start_str)
-            fecha_humana = dt_obj.strftime("%d/%m/%Y a las %I:%M %p")
-        except:
-            pass
-
-        # Extraer email cliente del description si es posible, o retornarlo como None
-        # En create_event metemos: "Tel: ...\nAsesor: ..."
-        # Si no guardamos email en description, tocaría pasarlo en 'data' al origen si está disponible.
-        # Por ahora extraemos lo que hay.
-
-        # 2. BORRAR EVENTO
-        service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
-        print(f"✅ Cita cancelada: {summary} ({event_id})")
-
-        return {
-            "evento_summary": summary,
-            "evento_description": description,
-            "fecha_humana": fecha_humana,
-            "cliente_telefono": client_phone,
-            # Se intentará parsear más datos en notifications si es necesario
-        }
+            except Exception as e_inner:
+                # Si falla leer un calendario específico, continuamos con el siguiente
+                print(f"⚠️ Error leyendo calendario {cal_id}: {e_inner}")
+                continue
+        
+        print(f"⚠️ No se encontró ninguna cita futura para {phone_clean} en ningún calendario.")
+        return None
 
     except Exception as e:
-        print(f"❌ Error cancelando cita: {e}")
+        print(f"❌ Error Global en cancel_appointment: {e}")
         return None

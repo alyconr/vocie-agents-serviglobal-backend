@@ -1,18 +1,16 @@
 import sys
 import os
+import datetime
 
 # Añadir el directorio actual al path para imports
 sys.path.append(os.getcwd())
 
-from datetime import datetime, timedelta
-import pytz
 from app.config import TENANTS
 from app.core.google_auth import get_service
 
 # Configuración
 AGENT_ID = "agent_89e9f56cb7d25e9f1da5e38d45"
 PHONE = "573106666709"
-BOGOTA_TZ = pytz.timezone("America/Bogota")
 
 
 def debug_calendar():
@@ -34,10 +32,36 @@ def debug_calendar():
     try:
         service = get_service("calendar", "v3", creds_file)
 
-        now_dt = datetime.now(BOGOTA_TZ)
-        future_limit = now_dt + timedelta(days=60)
+        # 1. Listar Calendarios Visibles
+        print("\n🔎 Listando calendarios visibles para la cuenta de servicio:")
+        cal_list = service.calendarList().list().execute()
+        found_target = False
+        for cal in cal_list.get("items", []):
+            print(
+                f"   - {cal.get('summary')} (ID: {cal.get('id')}) - Access: {cal.get('accessRole')}"
+            )
+            if cal.get("id") == calendar_id:
+                found_target = True
 
-        print(f"⏳ Buscando eventos desde {now_dt} hasta {future_limit}")
+        if not found_target:
+            print(
+                f"⚠️ ¡ADVERTENCIA! El calendario objetivo '{calendar_id}' NO está en la lista de calendarios visibles."
+            )
+            print(
+                "   Esto significa que la cuenta de servicio no lo ha 'agregado' o no tiene permisos."
+            )
+        else:
+            print(f"✅ Calendario objetivo encontrado en la lista.")
+
+        # 2. Buscar Eventos
+        # Usamos UTC para evitar dependency hell de pytz si no está instalado
+        now_dt = datetime.datetime.now(datetime.timezone.utc)
+        start_search = now_dt - datetime.timedelta(days=2)  # 2 días atrás
+        future_limit = now_dt + datetime.timedelta(days=60)
+
+        print(
+            f"\n⏳ Buscando eventos desde {start_search.isoformat()} hasta {future_limit.isoformat()}"
+        )
         print(f"📞 Buscando teléfono: {PHONE}")
 
         # Intentar listar sin filtro 'q'
@@ -45,7 +69,7 @@ def debug_calendar():
             service.events()
             .list(
                 calendarId=calendar_id,
-                timeMin=now_dt.isoformat(),
+                timeMin=start_search.isoformat(),
                 timeMax=future_limit.isoformat(),
                 singleEvents=True,
                 orderBy="startTime",
@@ -54,16 +78,15 @@ def debug_calendar():
         )
 
         items = events_check.get("items", [])
-        print(f"📊 Total eventos futuros encontrados: {len(items)}")
+        print(f"📊 Total eventos encontrados: {len(items)}")
 
         matches = []
         for ev in items:
             summary = ev.get("summary", "")
             description = ev.get("description", "")
-
-            print(f"  - Revisando: '{summary}'")
+            # print(f"  - Revisando: '{summary}' | Start: {ev.get('start')}")
             if PHONE in summary or PHONE in description:
-                print(f"    ✅ MATCH ENCONTRADO!")
+                print(f"    ✅ MATCH ENCONTRADO: {summary}")
                 matches.append(ev)
 
         print(f"\n💡 Total Coincidencias: {len(matches)}")
