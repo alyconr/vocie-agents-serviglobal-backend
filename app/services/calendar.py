@@ -130,75 +130,63 @@ async def create_event_and_lock(agent_id: str, data: dict):
         return False
 
 
-async def find_and_cancel_appointment(agent_id: str, data: dict):
-
+async def find_and_cancel_appointment(agent_id: str, client_phone: str):
+    """
+    Busca la próxima cita futura asociada al teléfono y la elimina.
+    """
     tenant = TENANTS.get(agent_id)
-    if not tenant:
-        return None
+    if not tenant: return None
 
-    # limpiar el telefono para  la busqued (quitamos el +)
-
-    phone_clean = client.phone.replace("+", "").strip()
-    calendar_id = tenant["calendar_id"]
+    # Limpieza del teléfono para mejorar la búsqueda (quitamos el +)
+    phone_clean = client_phone.replace("+", "").strip()
+    
+    # 1. Definir calendario donde buscar
+    # Buscamos en el principal por defecto. 
+    calendar_id = tenant['calendar_id'] 
 
     try:
-
-        service = get_service("calendar", "v3", tenant["creds_file"])
-        now = datetime.now(BOGOTA_TZ)
+        service = get_service('calendar', 'v3', tenant['creds_file'])
+        
+        # Hora actual en Bogotá
+        bogota_tz = pytz.timezone('America/Bogota')
+        now = datetime.now(bogota_tz)
         time_min = now.isoformat()
-
-        events_result = (
-            service.events()
-            .list(
-                calendarId=calendar_id,
-                timeMin=time_min,
-                maxResults=10,
-                singleEvents=True,
-                orderBy="startTime",
-                q=phone_clean,
-            )
-            .execute()
-        )
+        
+        # 2. Buscar eventos futuros donde aparezca el teléfono
+        # Google busca la string 'q' en título, descripción, asistentes, etc.
+        events_result = service.events().list(
+            calendarId=calendar_id,
+            timeMin=time_min,
+            maxResults=5, # Traemos pocos para no saturar
+            singleEvents=True,
+            orderBy='startTime',
+            q=phone_clean 
+        ).execute()
+        
+        events = events_result.get('items', [])
 
         if not events:
-            print(f"No se encontraron citas para el telefono: {phone_clean}")
+            print(f"⚠️ No se encontraron citas futuras para cancelar del número {phone_clean}")
             return None
 
-        # Tomamos el primero (la cita más próxima)
+        # 3. Tomamos el evento más próximo
         event_to_cancel = events[0]
-        event_id = event_to_cancel["id"]
-
-        # Extraemos datos para notificar antes de borrar
-        summary = event_to_cancel.get("summary", "Cita")
-        start_time = event_to_cancel["start"].get("dateTime", "")
-        description = event_to_cancel.get("description", "")
-
-        # Intentar extraer email del asesor de los asistentes o descripción
-        asesor_email = None
-        if "attendees" in event_to_cancel:
-            for attendee in event_to_cancel["attendees"]:
-                # Asumimos que el asesor es el attendee que NO es el cliente (si estuviera)
-                # O simplificamos buscando el email de la inmobiliaria
-                pass
-
-        # BORRAR EVENTO
+        event_id = event_to_cancel['id']
+        summary = event_to_cancel.get('summary', 'Cita')
+        start_time = event_to_cancel['start'].get('dateTime', '')
+        
+        # 4. EJECUTAR EL BORRADO
         service.events().delete(calendarId=calendar_id, eventId=event_id).execute()
-        print(f"🗑️ Cita eliminada: {summary} - {start_time}")
+        print(f"🗑️ Cita eliminada exitosamente: {summary}")
 
+        # Retornamos datos para la notificación
         return {
             "cliente_telefono": client_phone,
+            "cliente_nombre": summary.split(":")[1].split("-")[0].strip() if ":" in summary else "Cliente",
             "fecha_hora": start_time,
-            "resumen": summary,
-            "descripcion": description,
-            # Extraer nombre si es posible del summary "CITA: Nombre - Propiedad"
-            "cliente_nombre": (
-                summary.split(":")[1].split("-")[0].strip()
-                if ":" in summary
-                else "Cliente"
-            ),
-            "asesor_email": None,  # Aquí podrías mejorar la lógica para extraerlo de la descripción si lo guardaste
+            "resumen": summary
         }
 
     except Exception as e:
-        print(f"Error Calendar List: {e}")
+        print(f"❌ Error intentando cancelar cita: {e}")
         return None
