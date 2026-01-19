@@ -187,5 +187,3 @@ async def receive_whatsapp_message(request: Request, background_tasks: Backgroun
         print(f"❌ Error procesando WhatsApp: {e}")
         return {"status": "error"}
 
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
