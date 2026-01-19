@@ -140,6 +140,86 @@ async def notify_all_parties(agent_id: str, data: dict):
         )
 
 
+async def notify_cancellation(agent_id: str, data: dict):
+    """
+    Notifica la cancelación a Cliente, Asesor y Dueño.
+    """
+    tenant = TENANTS.get(agent_id)
+    if not tenant:
+        return
+
+    token = os.getenv("WHATSAPP_TOKEN", GLOBAL_WA_TOKEN)
+    phone_id = os.getenv("WHATSAPP_PHONE_ID", GLOBAL_WA_PHONE_ID)
+
+    # Datos
+    cliente_telefono = data.get("cliente_telefono")
+    cliente_nombre = data.get("cliente_nombre", "Cliente")
+    asesor_nombre = data.get("asesor_nombre", "Asesor")
+    fecha_raw = data.get("fecha_hora", "")
+
+    fecha_humana = fecha_raw
+    try:
+        dt = datetime.fromisoformat(fecha_raw)
+        fecha_humana = dt.strftime("%d/%m/%Y a las %I:%M %p")
+    except:
+        pass
+
+    # --- 1. WHATSAPP AL CLIENTE (Confirmación) ---
+    if token and phone_id and cliente_telefono:
+        await send_whatsapp(
+            to=cliente_telefono,
+            template="cita_cancelada_cliente",  # <--- CREAR ESTA PLANTILLA EN META
+            params=[cliente_nombre, fecha_humana],
+            token=token,
+            phone_id=phone_id,
+        )
+
+    # --- 2. WHATSAPP AL DUEÑO (Alerta) ---
+    owner_phone = tenant.get("owner_phone")
+    if token and phone_id and owner_phone:
+        await send_whatsapp(
+            to=owner_phone,
+            template="alerta_cancelacion_owner",  # <--- CREAR ESTA PLANTILLA EN META
+            params=[cliente_nombre, fecha_humana, asesor_nombre],
+            token=token,
+            phone_id=phone_id,
+        )
+
+    # --- 3. EMAILS (Cliente, Asesor, Owner) ---
+    asunto = f"❌ CITA CANCELADA: {cliente_nombre} - {fecha_humana}"
+
+    body = f"""
+    <h3>La siguiente cita ha sido cancelada:</h3>
+    <ul>
+        <li><strong>Cliente:</strong> {cliente_nombre}</li>
+        <li><strong>Fecha Original:</strong> {fecha_humana}</li>
+        <li><strong>Teléfono:</strong> {cliente_telefono}</li>
+    </ul>
+    <p>El horario ha quedado liberado en el calendario.</p>
+    """
+
+    menseaje_cliente = f"""
+    <h3>Hola {cliente_nombre},</h3>
+    <p>La cita ha sido cancelada exitosamente.</p>
+    <ul>
+        <li><strong>Fecha:</strong> {fecha_humana}</li>
+    </ul>
+    <p>Nos vemos pronto.<br>Equipo {tenant['name']}</p>
+    """
+
+    # Email al Owner (Siempre)
+    if tenant.get("owner_email"):
+        send_email_smtp(tenant["owner_email"], asunto, body)
+
+    # Email al Asesor (Siempre)
+    if tenant.get("asesor_email"):
+        send_email_smtp(tenant["asesor_email"], asunto, body)
+
+    # Email al Cliente (Siempre)
+    if tenant.get("cliente_email"):
+        send_email_smtp(tenant["cliente_email"], asunto, menseaje_cliente)
+
+
 async def send_whatsapp(
     to: str, template: str, params: list, token: str, phone_id: str
 ):
