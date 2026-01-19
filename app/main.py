@@ -20,7 +20,7 @@ def home():
     return {"status": "online", "message": "Voice Agent Backend is running"}
 
 # --- WEBHOOK PARA RETELL AI (VOZ) ---
-@app.post("/webhook/retell")
+@app.post("/webhook/")
 async def handle_retell_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Maneja las llamadas de función (Function Calling) desde Retell AI.
