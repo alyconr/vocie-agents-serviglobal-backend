@@ -246,43 +246,53 @@ async def notify_cancellation(
                 phone_id=phone_id,
             )
 
-    # --- ENVIAR EMAILS ---
+    # --- EMAILS ---
     # 1. Al Cliente
     if cliente_email:
         asunto_cli = f"Cita Cancelada: {fecha_humana}"
-        body_cli = f"""
-        <h2>Hola {cliente_nombre},</h2>
-        <p>Confirmamos que tu cita programada para el <strong>{fecha_humana}</strong> ha sido cancelada exitosamente.</p>
-        <p>Si deseas reagendar, no dudes en escribirnos nuevamente.</p>
-        <p>Saludos,<br>{tenant['name']}</p>
-        """
+        body_cli = f"<h2>Hola {cliente_nombre},</h2><p>Tu cita del <strong>{fecha_humana}</strong> ha sido cancelada.</p>"
         send_email_smtp(cliente_email, asunto_cli, body_cli)
 
-    # 2. Al Dueño / Asesor (Notificación Interna)
+    # 2. Obtener Emails Internos (Dueño + Asesor)
     owner_email = tenant.get("owner_email")
-
-    # --- AQUÍ ESTÁ LA MAGIA ---
-    # Leemos el email detectado por calendar.py
-    asesor_email = cancel_data.get("asesor_email_detectado")
-
-    # Si por alguna razón calendar.py falló en detectarlo y tenemos origin_data
-    if not asesor_email and origin_data:
-        asesor_email = origin_data.get("asesor_email")
-
-    destinatarios_internos = set()
+    destinatarios = set()
     if owner_email:
-        destinatarios_internos.add(owner_email)
-    if asesor_email:
-        destinatarios_internos.add(asesor_email)
+        destinatarios.add(owner_email)
 
-    for email_destino in destinatarios_internos:
+    # --- CORRECCIÓN AQUÍ: BUSCAR EMAIL REAL DEL ASESOR ---
+    asesor_email = None
+
+    # Intento 1: Buscar en el inventario usando el ID del calendario origen
+    cal_origen_id = cancel_data.get("asesor_calendario_origen")
+    if cal_origen_id:
+        print(f"🔎 Buscando email para calendario ID: {cal_origen_id}")
+        asesor_email = await inventory.get_advisor_email_by_calendar(
+            agent_id, cal_origen_id
+        )
+
+        if asesor_email:
+            print(f"✅ Email encontrado: {asesor_email}")
+        else:
+            print(f"⚠️ No se encontró email para ese ID en inventario.")
+            # Fallback: Si el ID NO es un grupo raro, podría ser el email mismo
+            if (
+                "@" in cal_origen_id
+                and "group.calendar.google.com" not in cal_origen_id
+            ):
+                asesor_email = cal_origen_id
+
+    if asesor_email:
+        destinatarios.add(asesor_email)
+
+    # Enviar a todos los destinatarios internos encontrados
+    for email_destino in destinatarios:
         asunto_interno = f"🚫 CITA CANCELADA: {cliente_nombre}"
         body_interno = f"""
         <h3>Aviso de Cancelación</h3>
         <ul>
             <li><strong>Cliente:</strong> {cliente_nombre}</li>
             <li><strong>Teléfono:</strong> {cliente_telefono}</li>
-            <li><strong>Fecha cancelada:</strong> {fecha_humana}</li>
+            <li><strong>Fecha:</strong> {fecha_humana}</li>
             <li><strong>Origen:</strong> WhatsApp Automático</li>
         </ul>
         """

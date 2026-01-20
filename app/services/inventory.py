@@ -148,7 +148,6 @@ async def _get_inventory_df(agent_id: str):
 async def get_unique_calendar_ids(agent_id: str):
     """
     Retorna una lista de todos los IDs de calendario de asesores.
-    Usado por calendar.py para saber qué calendarios escanear.
     """
     df = await _get_inventory_df(agent_id)
     if df is not None and "asesor_calendar_id" in df.columns:
@@ -160,7 +159,6 @@ async def get_unique_calendar_ids(agent_id: str):
 async def get_advisor_email_by_calendar(agent_id: str, calendar_id: str):
     """
     Busca el correo real (asesor_email) dado un ID de calendario.
-    Usado por calendar.py para resolver el destinatario de la notificación.
     """
     df = await _get_inventory_df(agent_id)
 
@@ -170,7 +168,6 @@ async def get_advisor_email_by_calendar(agent_id: str, calendar_id: str):
         and "asesor_email" in df.columns
     ):
         target_id = str(calendar_id).strip()
-        # Filtramos
         match = df[df["asesor_calendar_id"].astype(str).str.strip() == target_id]
 
         if not match.empty:
@@ -299,13 +296,18 @@ async def search_inventory(agent_id: str, args: dict):
         cols = [c for c in (campos_comunes + campos_precio) if c in results.columns]
         top_records = results.head(3)[cols].to_dict(orient="records")
 
+        # --- CORRECCIÓN FINAL (Aquí estaba el error) ---
         # Formateo Pesos
         for item in top_records:
             for k, v in item.items():
                 if any(x in k for x in ["precio", "canon", "valor"]) and isinstance(
                     v, (int, float)
                 ):
-                    item[k] = f"$ {int(val):,.0f} COP".replace(",", ".")
+                    # CORREGIDO: Usamos 'v' en lugar de 'val'
+                    try:
+                        item[k] = f"$ {int(v):,.0f} COP".replace(",", ".")
+                    except:
+                        pass
 
         return f"Encontré {len(results)} opciones. {json.dumps(top_records)}"
 
