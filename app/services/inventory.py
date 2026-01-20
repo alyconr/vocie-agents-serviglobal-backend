@@ -142,17 +142,43 @@ async def _get_inventory_df(agent_id: str):
     return df
 
 
-# --- NUEVA FUNCIÓN PARA OBTENER CALENDARIOS ---
+# --- FUNCIONES HELPER PARA CALENDAR ---
+
+
 async def get_unique_calendar_ids(agent_id: str):
     """
-    Retorna una lista de todos los IDs de calendario de asesores presentes en el inventario.
+    Retorna una lista de todos los IDs de calendario de asesores.
+    Usado por calendar.py para saber qué calendarios escanear.
     """
     df = await _get_inventory_df(agent_id)
     if df is not None and "asesor_calendar_id" in df.columns:
-        # Extraer únicos, eliminar vacíos y asegurar que parecen emails
         ids = df["asesor_calendar_id"].dropna().unique().tolist()
         return [str(x).strip() for x in ids if "@" in str(x)]
     return []
+
+
+async def get_advisor_email_by_calendar(agent_id: str, calendar_id: str):
+    """
+    Busca el correo real (asesor_email) dado un ID de calendario.
+    Usado por calendar.py para resolver el destinatario de la notificación.
+    """
+    df = await _get_inventory_df(agent_id)
+
+    if (
+        df is not None
+        and "asesor_calendar_id" in df.columns
+        and "asesor_email" in df.columns
+    ):
+        target_id = str(calendar_id).strip()
+        # Filtramos
+        match = df[df["asesor_calendar_id"].astype(str).str.strip() == target_id]
+
+        if not match.empty:
+            email = match.iloc[0]["asesor_email"]
+            if email and "@" in str(email):
+                return str(email).strip()
+
+    return None
 
 
 # --- FUNCIÓN PRINCIPAL DE BÚSQUEDA ---
@@ -279,7 +305,7 @@ async def search_inventory(agent_id: str, args: dict):
                 if any(x in k for x in ["precio", "canon", "valor"]) and isinstance(
                     v, (int, float)
                 ):
-                    item[k] = f"$ {int(v):,.0f} COP".replace(",", ".")
+                    item[k] = f"$ {int(val):,.0f} COP".replace(",", ".")
 
         return f"Encontré {len(results)} opciones. {json.dumps(top_records)}"
 

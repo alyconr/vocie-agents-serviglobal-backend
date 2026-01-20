@@ -191,6 +191,17 @@ async def cancel_appointment(agent_id: str, client_phone: str):
                 except:
                     pass
 
+                # 4. RESOLVER EMAIL REAL DEL ASESOR
+                asesor_email_real = None
+                
+                # A. Si el ID del calendario parece un email personal (no group.calendar), úsalo.
+                if "@" in cal_id and "group.calendar.google.com" not in cal_id:
+                    asesor_email_real = cal_id
+                
+                # B. Si no (es un ID técnico), búscalo en el inventario
+                if not asesor_email_real:
+                    asesor_email_real = await inventory.get_advisor_email_by_calendar(agent_id, cal_id)
+
                 return {
                     "evento_summary": summary,
                     "fecha_humana": fecha_humana,
