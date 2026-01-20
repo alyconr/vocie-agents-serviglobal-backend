@@ -74,17 +74,26 @@ async def receive_whatsapp_message(request: Request, background_tasks: Backgroun
                 if text_body.lower() in ["cancelar cita", "cancelar"]:
                     should_cancel = True
 
-            # 2. SI ES BOTÓN INTERACTIVO (Payload)
+            # 2. SI ES BOTÓN INTERACTIVO (Payload moderno)
             elif msg_type == "interactive":
                 interactive = message.get("interactive", {})
                 if interactive.get("type") == "button_reply":
                     btn_id = interactive["button_reply"]["id"]
                     btn_title = interactive["button_reply"]["title"]
-                    print(f"🔘 Botón presionado: ID={btn_id} | Title={btn_title}")
+                    print(f"🔘 Botón Interactivo: ID={btn_id} | Title={btn_title}")
                     
-                    # Verificamos ID o Texto del botón
                     if btn_id == "CANCELAR_CITA" or btn_title.lower() in ["cancelar cita", "cancelar"]:
                         should_cancel = True
+            
+            # 3. SI ES BOTÓN (Template Button - Legacy / Quick Reply) <--- AGREGADO NUEVO
+            elif msg_type == "button":
+                button_obj = message.get("button", {})
+                btn_text = button_obj.get("text", "")
+                btn_payload = button_obj.get("payload", "")
+                print(f"🔘 Botón Legacy: Texto={btn_text} | Payload={btn_payload}")
+
+                if btn_payload == "CANCELAR_CITA" or btn_text.lower() in ["cancelar cita", "cancelar"]:
+                    should_cancel = True
 
             # --- EJECUCIÓN CENTRALIZADA DE CANCELACIÓN ---
             if should_cancel:
