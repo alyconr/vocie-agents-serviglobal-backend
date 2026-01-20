@@ -68,7 +68,8 @@ async def notify_all_parties(agent_id: str, data: dict):
                 params=[                   
                     cliente_nombre,
                     telefono,
-                    f"{fecha_humana} - {propiedad}",
+                    fecha_humana,
+                    propiedad,
                 ],
                 token=token,
                 phone_id=phone_id,
