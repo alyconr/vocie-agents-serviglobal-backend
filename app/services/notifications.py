@@ -46,6 +46,7 @@ async def notify_all_parties(agent_id: str, data: dict):
 
     propiedad = data.get("propiedad_interes", "Propiedad")
     cliente_nombre = data.get("cliente_nombre", "Cliente")
+    telefono = data.get("cliente_telefono", "No provisto")
     asesor_nombre = data.get("asesor_nombre", "Asesor")
 
     # --- 2. ENVIAR WHATSAPP ---
@@ -66,7 +67,7 @@ async def notify_all_parties(agent_id: str, data: dict):
                 template="alerta_nuevo_lead_owner",
                 params=[                   
                     cliente_nombre,
-                    data.get("cliente_telefono"),
+                    telefono,
                     f"{fecha_humana} - {propiedad}",
                 ],
                 token=token,
