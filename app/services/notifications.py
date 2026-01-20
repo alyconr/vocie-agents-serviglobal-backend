@@ -47,7 +47,7 @@ async def notify_all_parties(agent_id: str, data: dict):
     propiedad = data.get("propiedad_interes", "Propiedad")
     cliente_nombre = data.get("cliente_nombre", "Cliente")
     asesor_nombre = data.get("asesor_nombre", "Asesor")
-    
+
     # --- 2. ENVIAR WHATSAPP ---
     if token and phone_id:
         # Al Cliente
@@ -64,8 +64,7 @@ async def notify_all_parties(agent_id: str, data: dict):
             await send_whatsapp(
                 to=tenant["owner_phone"],
                 template="alerta_nuevo_lead_owner",
-                params=[
-                    tenant["name"],
+                params=[                   
                     cliente_nombre,
                     data.get("cliente_telefono"),
                     f"{fecha_humana} - {propiedad}",
@@ -160,7 +159,7 @@ def send_email_smtp(to_email, subject, body_html):
     """
     smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
     port_env = os.getenv("SMTP_PORT")
-    
+
     try:
         smtp_port = int(port_env) if port_env and port_env.strip() else 587
     except ValueError:
@@ -177,10 +176,10 @@ def send_email_smtp(to_email, subject, body_html):
         msg = MIMEMultipart()
         msg["From"] = f"Inmobiliaria Bot <{smtp_user}>"
         msg["To"] = to_email
-        
+
         # --- CORRECCIÓN: Asignación directa (Python 3 maneja UTF-8 nativo en headers) ---
         msg["Subject"] = subject
-        
+
         # El cuerpo sí lo declaramos explícitamente como utf-8
         msg.attach(MIMEText(body_html, "html", "utf-8"))
 
@@ -211,6 +210,7 @@ async def notify_cancellation(
 
     fecha_humana = cancel_data.get("fecha_humana", "Fecha desconocida")
     cliente_telefono = cancel_data.get("cliente_telefono", "")
+    asesor_nombre = cancel_data.get("asesor_nombre", "Asesor")
     summary = cancel_data.get("evento_summary", "")
 
     # Intentar sacar nombre del summary "CITA: Nombre - Propiedad"
@@ -246,8 +246,7 @@ async def notify_cancellation(
                 params=[
                     cliente_nombre,
                     fecha_humana,
-                    "No asignado", # Asesor nombre placeholder
-                    "Cancelado por el cliente vía WhatsApp",
+                    asesor_nombre,
                 ],
                 token=token,
                 phone_id=phone_id,
@@ -267,7 +266,7 @@ async def notify_cancellation(
 
     # 2. Al Dueño / Asesor (Notificación Interna)
     owner_email = tenant.get("owner_email")
-    
+
     # Intentar detectar asesor responsable desde el evento
     asesor_email = None
     if "CITA:" in summary:
@@ -281,8 +280,10 @@ async def notify_cancellation(
             pass
 
     destinatarios_internos = set()
-    if owner_email: destinatarios_internos.add(owner_email)
-    if asesor_email: destinatarios_internos.add(asesor_email)
+    if owner_email:
+        destinatarios_internos.add(owner_email)
+    if asesor_email:
+        destinatarios_internos.add(asesor_email)
 
     for email_destino in destinatarios_internos:
         asunto_interno = f"🚫 CITA CANCELADA: {cliente_nombre}"
