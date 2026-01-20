@@ -184,6 +184,10 @@ async def retell_webhook(request: Request, bg_tasks: BackgroundTasks):
             if not args.get("cliente_telefono"):
                 return {"result": "Necesito confirmar tu número de WhatsApp."}
             
+            # Al agendar, forzamos clasificación "Caliente" en el args
+            args['clasificacion'] = "Caliente"
+            args['estado'] = "Agendado"
+            
             success = await calendar.create_event_and_lock(agent_id, args)
             if success:
                 bg_tasks.add_task(notifications.notify_all_parties, agent_id, args)
@@ -194,14 +198,17 @@ async def retell_webhook(request: Request, bg_tasks: BackgroundTasks):
 
         if func_name == "cancel_appointment":
             phone = args.get("cliente_telefono") or args.get("from_number")
-            if not phone: return {"result": "No identifiqué tu número."}
-            
             cancel_result = await calendar.cancel_appointment(agent_id, phone)
             if cancel_result:
                 bg_tasks.add_task(notifications.notify_cancellation, agent_id, cancel_result, args)
-                return {"result": f"Cita cancelada: {cancel_result.get('evento_summary', '')}."}
-            else:
-                return {"result": "No encontré ninguna cita futura."}
+                return {"result": "Cita cancelada."}
+            return {"result": "No encontré cita."}
+
+        # --- NUEVA FUNCIÓN ---
+        if func_name == "update_lead_status":
+            # Guardamos en CRM sin bloquear la voz
+            bg_tasks.add_task(crm.log_lead_bg, agent_id, args)
+            return {"result": "Entendido, guardaré esa información en el perfil del cliente."}
 
         return {"result": f"Función {func_name} no encontrada."}
 
