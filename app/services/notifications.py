@@ -212,6 +212,7 @@ async def notify_cancellation(
     fecha_humana = cancel_data.get("fecha_humana", "Fecha desconocida")
     cliente_telefono = cancel_data.get("cliente_telefono", "")
     asesor_nombre = cancel_data.get("asesor_nombre", "Asesor")
+    asesor_email = cancel_data.get("asesor_email", "")
     summary = cancel_data.get("evento_summary", "")
 
     # Intentar sacar nombre del summary "CITA: Nombre - Propiedad"
