@@ -191,7 +191,7 @@ async def notify_cancellation(
 ):
     """
     Notifica la cancelación.
-    USA EL EMAIL DETECTADO POR CALENDAR.PY
+    CORREGIDO: Extracción de 'propiedad' para evitar NameError.
     """
     tenant = TENANTS.get(agent_id)
     if not tenant:
@@ -204,15 +204,26 @@ async def notify_cancellation(
 
     fecha_humana = cancel_data.get("fecha_humana", "Fecha desconocida")
     cliente_telefono = cancel_data.get("cliente_telefono", "")
-    asesor_nombre = cancel_data.get("asesor_nombre", "")
     summary = cancel_data.get("evento_summary", "")
 
-    # Intentar sacar nombre
+    # --- EXTRACCIÓN ROBUSTA DE DATOS DEL SUMMARY ---
+    # Formato esperado: "CITA: {Nombre} - {Propiedad}"
     cliente_nombre = "Cliente"
+    propiedad = "Propiedad General"  # Valor por defecto para evitar el error
+
     if "CITA:" in summary:
         try:
-            parts = summary.replace("CITA:", "").split("-")
-            cliente_nombre = parts[0].strip()
+            # Quitamos el prefijo
+            clean_summary = summary.replace("CITA:", "").strip()
+            
+            # Dividimos por el guion
+            if "-" in clean_summary:
+                parts = clean_summary.split("-", 1) # Split solo en el primer guion
+                cliente_nombre = parts[0].strip()
+                if len(parts) > 1:
+                    propiedad = parts[1].strip()
+            else:
+                cliente_nombre = clean_summary
         except:
             pass
 
@@ -234,65 +245,62 @@ async def notify_cancellation(
 
         if tenant.get("owner_phone"):
             print(f"📲 Enviando WhatsApp Cancelación a Owner {tenant['owner_phone']}")
+            # AQUI ESTABA EL ERROR: 'propiedad' ahora ya está definida arriba
             await send_whatsapp(
                 to=tenant["owner_phone"],
                 template="alerta_cancelacion_owner",
                 params=[
                     cliente_nombre,
                     fecha_humana,
-                    propiedad,
+                    propiedad, 
                 ],
                 token=token,
                 phone_id=phone_id,
             )
 
-    # --- EMAILS ---
+    # --- ENVIAR EMAILS ---
     # 1. Al Cliente
     if cliente_email:
         asunto_cli = f"Cita Cancelada: {fecha_humana}"
-        body_cli = f"<h2>Hola {cliente_nombre},</h2><p>Tu cita del <strong>{fecha_humana}</strong> ha sido cancelada.</p>"
+        body_cli = f"""
+        <h2>Hola {cliente_nombre},</h2>
+        <p>Confirmamos que tu cita programada para el <strong>{fecha_humana}</strong> ha sido cancelada exitosamente.</p>
+        <p>Si deseas reagendar, no dudes en escribirnos nuevamente.</p>
+        <p>Saludos,<br>{tenant['name']}</p>
+        """
         send_email_smtp(cliente_email, asunto_cli, body_cli)
 
-    # 2. Obtener Emails Internos (Dueño + Asesor)
+    # 2. Al Dueño / Asesor
     owner_email = tenant.get("owner_email")
     destinatarios = set()
-    if owner_email:
-        destinatarios.add(owner_email)
+    if owner_email: destinatarios.add(owner_email)
 
-    # --- CORRECCIÓN AQUÍ: BUSCAR EMAIL REAL DEL ASESOR ---
+    # Buscar email real del asesor (si aplica)
     asesor_email = None
-
-    # Intento 1: Buscar en el inventario usando el ID del calendario origen
     cal_origen_id = cancel_data.get("asesor_calendario_origen")
+    
+    # Intentar buscar en el inventario
     if cal_origen_id:
-        print(f"🔎 Buscando email para calendario ID: {cal_origen_id}")
-        asesor_email = await inventory.get_advisor_email_by_calendar(
-            agent_id, cal_origen_id
-        )
-
-        if asesor_email:
-            print(f"✅ Email encontrado: {asesor_email}")
-        else:
-            print(f"⚠️ No se encontró email para ese ID en inventario.")
-            # Fallback: Si el ID NO es un grupo raro, podría ser el email mismo
-            if (
-                "@" in cal_origen_id
-                and "group.calendar.google.com" not in cal_origen_id
-            ):
-                asesor_email = cal_origen_id
+        # Import local para evitar ciclos circulares si fuera el caso, o usamos el import global
+        from app.services import inventory 
+        asesor_email = await inventory.get_advisor_email_by_calendar(agent_id, cal_origen_id)
+        
+        # Fallback si el ID parece un email personal
+        if not asesor_email and "@" in cal_origen_id and "group.calendar.google.com" not in cal_origen_id:
+            asesor_email = cal_origen_id
 
     if asesor_email:
         destinatarios.add(asesor_email)
 
-    # Enviar a todos los destinatarios internos encontrados
     for email_destino in destinatarios:
         asunto_interno = f"🚫 CITA CANCELADA: {cliente_nombre}"
         body_interno = f"""
         <h3>Aviso de Cancelación</h3>
         <ul>
             <li><strong>Cliente:</strong> {cliente_nombre}</li>
+            <li><strong>Propiedad:</strong> {propiedad}</li>
             <li><strong>Teléfono:</strong> {cliente_telefono}</li>
-            <li><strong>Fecha:</strong> {fecha_humana}</li>
+            <li><strong>Fecha cancelada:</strong> {fecha_humana}</li>
             <li><strong>Origen:</strong> WhatsApp Automático</li>
         </ul>
         """
