@@ -8,6 +8,9 @@ import locale
 from app.config import GLOBAL_WA_TOKEN, GLOBAL_WA_PHONE_ID, TENANTS
 from dotenv import load_dotenv
 
+# Importar inventory para buscar emails de asesores si es necesario
+from app.services import inventory
+
 load_dotenv()
 
 try:
@@ -15,20 +18,20 @@ try:
 except:
     pass
 
-
 async def notify_all_parties(agent_id: str, data: dict):
-    """
-    Orquesta el envío de WhatsApps y Correos para NUEVAS CITAS.
-    """
     tenant = TENANTS.get(agent_id)
-    if not tenant:
-        return
+    if not tenant: return
 
-    print(f"🔔 Notificando partes para {tenant.get('name')}...")
+    print(f"🔔 Nueva Cita: Notificando a todas las partes ({tenant.get('name')})...")
 
     token = os.getenv("WHATSAPP_TOKEN", GLOBAL_WA_TOKEN)
     phone_id = os.getenv("WHATSAPP_PHONE_ID", GLOBAL_WA_PHONE_ID)
 
+    # Extracción Segura
+    cliente_nombre = data.get("cliente_nombre", "Cliente")
+    cliente_telefono = data.get("cliente_telefono", "")
+    propiedad = data.get("propiedad_interes", "Propiedad")
+    asesor_nombre = data.get("asesor_nombre", "Asesor")
     cliente_email = data.get("cliente_email")
     asesor_email = data.get("asesor_email")
 
@@ -41,132 +44,110 @@ async def notify_all_parties(agent_id: str, data: dict):
     except:
         pass
 
-    propiedad = data.get("propiedad_interes", "Propiedad")
-    cliente_nombre = data.get("cliente_nombre", "Cliente")
-    cliente_telefono = data.get("cliente_telefono", "")
-    asesor_nombre = data.get("asesor_nombre", "Asesor")
-
-    # --- 2. ENVIAR WHATSAPP ---
+    # --- 1. WHATSAPP (CONFIRMACIÓN) ---
     if token and phone_id:
-        if data.get("cliente_telefono"):
+        if cliente_telefono:
+            # Plantilla sugerida: cita_confirmada_cliente
+            # Variables: {{1}}=Nombre, {{2}}=Fecha, {{3}}=Asesor, {{4}}=Propiedad
             await send_whatsapp(
-                to=data["cliente_telefono"],
+                to=cliente_telefono,
                 template="cita_confirmada_cliente",
                 params=[cliente_nombre, fecha_humana, asesor_nombre, propiedad],
                 token=token,
-                phone_id=phone_id,
+                phone_id=phone_id
             )
+        
         if tenant.get("owner_phone"):
             await send_whatsapp(
                 to=tenant["owner_phone"],
                 template="alerta_nuevo_lead_owner",
-                params=[
-                    tenant["name"],
-                    cliente_nombre,
-                    cliente_telefono,
-                    fecha_humana,
-                    propiedad,
-                ],
+                params=[tenant["name"], cliente_nombre, cliente_telefono, fecha_humana, propiedad],
                 token=token,
-                phone_id=phone_id,
+                phone_id=phone_id
             )
 
-    # --- 3. ENVIAR CORREOS ---
+    # --- 2. EMAILS ---
     asunto = f"Confirmación Cita: {propiedad} - {fecha_humana}"
-
     mensaje_html = f"""
     <h2>Hola {cliente_nombre},</h2>
     <p>Tu cita ha sido confirmada exitosamente.</p>
     <ul>
         <li><strong>Propiedad:</strong> {propiedad}</li>
         <li><strong>Fecha:</strong> {fecha_humana}</li>
-        <li><strong>Asesor:</strong> {data.get('asesor_nombre', 'Asignado')}</li>
+        <li><strong>Asesor:</strong> {asesor_nombre}</li>
     </ul>
     <p>Nos vemos pronto.<br>Equipo {tenant['name']}</p>
     """
 
     if cliente_email and "@" in cliente_email:
-        send_email_smtp(to_email=cliente_email, subject=asunto, body_html=mensaje_html)
+        send_email_smtp(cliente_email, asunto, mensaje_html)
 
     if asesor_email and "@" in asesor_email:
-        asunto_asesor = f"🔔 NUEVA CITA: {cliente_nombre} - {fecha_humana}"
-        mensaje_asesor = f"""
-        <h3>Nueva Cita Agendada</h3>
-        <ul>
-            <li><strong>Cliente:</strong> {cliente_nombre}</li>
-            <li><strong>Teléfono:</strong> {data.get('cliente_telefono')}</li>
-            <li><strong>Email:</strong> {cliente_email}</li>
-            <li><strong>Propiedad:</strong> {propiedad}</li>
-            <li><strong>Fecha:</strong> {fecha_humana}</li>
-        </ul>
-        """
-        send_email_smtp(
-            to_email=asesor_email, subject=asunto_asesor, body_html=mensaje_asesor
-        )
+        send_email_smtp(asesor_email, f"🔔 NUEVA CITA: {cliente_nombre}", mensaje_html)
 
     owner_email = tenant.get("owner_email")
-    if owner_email and "@" in owner_email and owner_email != asesor_email:
-        asunto_owner = f"🔔 NUEVA CITA Agendada - {cliente_nombre}"
-        mensaje_owner = f"""
-        <h3>Nueva Cita Agendada en {tenant['name']}</h3>
-        <ul>
-            <li><strong>Cliente:</strong> {cliente_nombre}</li>
-            <li><strong>Teléfono:</strong> {data.get('cliente_telefono')}</li>
-            <li><strong>Email:</strong> {cliente_email}</li>
-            <li><strong>Propiedad:</strong> {propiedad}</li>
-            <li><strong>Fecha:</strong> {fecha_humana}</li>
-        </ul>
-        """
-        send_email_smtp(
-            to_email=owner_email, subject=asunto_owner, body_html=mensaje_owner
-        )
+    if owner_email and owner_email != asesor_email:
+        send_email_smtp(owner_email, f"🔔 NUEVA CITA: {cliente_nombre}", mensaje_html)
 
 
-async def send_whatsapp(
-    to: str, template: str, params: list, token: str, phone_id: str
-):
-    url = f"https://graph.facebook.com/v24.0/{phone_id}/messages"
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    to = to.replace("+", "").replace(" ", "")
+async def send_whatsapp(to: str, template: str, params: list, token: str, phone_id: str):
+    """
+    Envía mensaje con LOGS DETALLADOS para depuración.
+    """
+    if not to: return
+
+    url = f"https://graph.facebook.com/v21.0/{phone_id}/messages"
+    headers = {
+        "Authorization": f"Bearer {token}", 
+        "Content-Type": "application/json"
+    }
+    
+    to_clean = to.replace("+", "").replace(" ", "").strip()
+    
     payload = {
         "messaging_product": "whatsapp",
-        "to": to,
+        "to": to_clean,
         "type": "template",
         "template": {
             "name": template,
-            "language": {"code": "es_CO"},
+            "language": {"code": "es_CO"}, # Verifica si tu plantilla es es_CO o es
             "components": [
                 {
                     "type": "body",
-                    "parameters": [{"type": "text", "text": str(p)} for p in params],
+                    "parameters": [{"type": "text", "text": str(p)} for p in params]
                 }
-            ],
-        },
+            ]
+        }
     }
+
+    print(f"📤 Enviando WA a {to_clean} | Template: {template} | Params: {params}")
+
     async with httpx.AsyncClient() as client:
         try:
-            await client.post(url, json=payload, headers=headers)
+            response = await client.post(url, json=payload, headers=headers)
+            
+            # --- DEBUGGING: ESTO TE DIRÁ POR QUÉ FALLA ---
+            if response.status_code in [200, 201]:
+                print(f"✅ WA Enviado OK. ID: {response.json().get('messages', [{}])[0].get('id')}")
+            else:
+                print(f"❌ ERROR META ({response.status_code}): {response.text}")
+                
         except Exception as e:
-            print(f"❌ Error WhatsApp: {e}")
+            print(f"❌ Error conexión HTTP WhatsApp: {e}")
 
 
 def send_email_smtp(to_email, subject, body_html):
-    """
-    Envía correo usando servidor SMTP.
-    """
     smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
     port_env = os.getenv("SMTP_PORT")
-
     try:
         smtp_port = int(port_env) if port_env and port_env.strip() else 587
-    except ValueError:
+    except:
         smtp_port = 587
-
+        
     smtp_user = os.getenv("SMTP_EMAIL")
     smtp_pass = os.getenv("SMTP_PASSWORD")
 
     if not smtp_user or not smtp_pass:
-        print(f"⚠️ SMTP no configurado. No se envió correo a {to_email}")
         return
 
     try:
@@ -181,127 +162,95 @@ def send_email_smtp(to_email, subject, body_html):
         server.login(smtp_user, smtp_pass)
         server.send_message(msg)
         server.quit()
-        print(f"📧 Correo enviado exitosamente a {to_email}")
+        print(f"📧 Email enviado a {to_email}")
     except Exception as e:
-        print(f"❌ Error enviando correo a {to_email}: {e}")
+        print(f"❌ Error SMTP: {e}")
 
 
-async def notify_cancellation(
-    agent_id: str, cancel_data: dict, origin_data: dict = None
-):
-    """
-    Notifica la cancelación.
-    CORREGIDO: Extracción de 'propiedad' para evitar NameError.
-    """
+async def notify_cancellation(agent_id: str, cancel_data: dict, origin_data: dict = None):
     tenant = TENANTS.get(agent_id)
-    if not tenant:
-        return
+    if not tenant: return
 
-    print(f"🔕 Iniciando notificaciones de cancelación para {tenant['name']}...")
+    print(f"🔕 Procesando Cancelación...")
 
     token = os.getenv("WHATSAPP_TOKEN", GLOBAL_WA_TOKEN)
     phone_id = os.getenv("WHATSAPP_PHONE_ID", GLOBAL_WA_PHONE_ID)
 
+    # 1. Recuperar datos
     fecha_humana = cancel_data.get("fecha_humana", "Fecha desconocida")
     cliente_telefono = cancel_data.get("cliente_telefono", "")
     summary = cancel_data.get("evento_summary", "")
 
-    # --- EXTRACCIÓN ROBUSTA DE DATOS DEL SUMMARY ---
-    # Formato esperado: "CITA: {Nombre} - {Propiedad}"
+    # 2. Extraer Nombre y Propiedad del Título del Evento
+    # Formato esperado: "CITA: Nombre Cliente - Nombre Propiedad"
     cliente_nombre = "Cliente"
-    propiedad = "Propiedad General"  # Valor por defecto para evitar el error
+    propiedad = "Propiedad General" # Valor por defecto para evitar NameError
 
-    if "CITA:" in summary:
+    if summary and "CITA:" in summary:
         try:
-            # Quitamos el prefijo
-            clean_summary = summary.replace("CITA:", "").strip()
-            
-            # Dividimos por el guion
-            if "-" in clean_summary:
-                parts = clean_summary.split("-", 1) # Split solo en el primer guion
+            clean = summary.replace("CITA:", "").strip()
+            if "-" in clean:
+                parts = clean.split("-", 1)
                 cliente_nombre = parts[0].strip()
                 if len(parts) > 1:
                     propiedad = parts[1].strip()
             else:
-                cliente_nombre = clean_summary
+                cliente_nombre = clean
         except:
             pass
-
-    cliente_email = None
-    if origin_data:
-        cliente_email = origin_data.get("cliente_email")
-
-    # --- ENVIAR WHATSAPP ---
+            
+    # --- 1. WHATSAPP ---
     if token and phone_id:
+        # A. Al Cliente
         if cliente_telefono:
-            print(f"📲 Enviando WhatsApp Cancelación a Cliente {cliente_telefono}")
+            # Asegúrate que tu plantilla 'cita_cancelada_cliente' acepte 2 variables
             await send_whatsapp(
                 to=cliente_telefono,
-                template="cita_cancelada_cliente",
+                template="cita_cancelada_cliente", 
                 params=[cliente_nombre, fecha_humana],
                 token=token,
-                phone_id=phone_id,
+                phone_id=phone_id
             )
-
+        
+        # B. Al Dueño
         if tenant.get("owner_phone"):
-            print(f"📲 Enviando WhatsApp Cancelación a Owner {tenant['owner_phone']}")
-            # AQUI ESTABA EL ERROR: 'propiedad' ahora ya está definida arriba
+            # Asegúrate que 'alerta_cancelacion_owner' acepte 3 variables
             await send_whatsapp(
                 to=tenant["owner_phone"],
                 template="alerta_cancelacion_owner",
-                params=[
-                    cliente_nombre,
-                    fecha_humana,
-                    propiedad, 
-                ],
+                params=[cliente_nombre, fecha_humana, propiedad],
                 token=token,
-                phone_id=phone_id,
+                phone_id=phone_id
             )
-
-    # --- ENVIAR EMAILS ---
-    # 1. Al Cliente
-    if cliente_email:
-        asunto_cli = f"Cita Cancelada: {fecha_humana}"
-        body_cli = f"""
-        <h2>Hola {cliente_nombre},</h2>
-        <p>Confirmamos que tu cita programada para el <strong>{fecha_humana}</strong> ha sido cancelada exitosamente.</p>
-        <p>Si deseas reagendar, no dudes en escribirnos nuevamente.</p>
-        <p>Saludos,<br>{tenant['name']}</p>
-        """
-        send_email_smtp(cliente_email, asunto_cli, body_cli)
-
-    # 2. Al Dueño / Asesor
-    owner_email = tenant.get("owner_email")
-    destinatarios = set()
-    if owner_email: destinatarios.add(owner_email)
-
-    # Buscar email real del asesor (si aplica)
-    asesor_email = None
-    cal_origen_id = cancel_data.get("asesor_calendario_origen")
     
-    # Intentar buscar en el inventario
-    if cal_origen_id:
-        # Import local para evitar ciclos circulares si fuera el caso, o usamos el import global
-        from app.services import inventory 
-        asesor_email = await inventory.get_advisor_email_by_calendar(agent_id, cal_origen_id)
+    # --- 2. EMAILS ---
+    # Buscar email real del asesor usando el ID del calendario
+    asesor_email = None
+    cal_id = cancel_data.get("asesor_calendario_origen")
+    
+    if cal_id:
+        asesor_email = await inventory.get_advisor_email_by_calendar(agent_id, cal_id)
+        # Si no lo encuentra en inventario, pero el ID parece un email personal
+        if not asesor_email and "@" in cal_id and "group.calendar.google.com" not in cal_id:
+            asesor_email = cal_id
+
+    destinatarios = set()
+    if tenant.get("owner_email"): destinatarios.add(tenant["owner_email"])
+    if asesor_email: destinatarios.add(asesor_email)
+    
+    body_interno = f"""
+    <h3>Cita Cancelada</h3>
+    <ul>
+        <li><strong>Cliente:</strong> {cliente_nombre}</li>
+        <li><strong>Tel:</strong> {cliente_telefono}</li>
+        <li><strong>Propiedad:</strong> {propiedad}</li>
+        <li><strong>Fecha original:</strong> {fecha_humana}</li>
+    </ul>
+    """
+    
+    for email in destinatarios:
+        send_email_smtp(email, f"🚫 CANCELACIÓN: {cliente_nombre}", body_interno)
         
-        # Fallback si el ID parece un email personal
-        if not asesor_email and "@" in cal_origen_id and "group.calendar.google.com" not in cal_origen_id:
-            asesor_email = cal_origen_id
-
-    if asesor_email:
-        destinatarios.add(asesor_email)
-
-    for email_destino in destinatarios:
-        asunto_interno = f"🚫 CITA CANCELADA: {cliente_nombre}"
-        body_interno = f"""
-        <h3>Aviso de Cancelación</h3>
-        <ul>
-            <li><strong>Cliente:</strong> {cliente_nombre}</li>
-            <li><strong>Propiedad:</strong> {propiedad}</li>
-            <li><strong>Teléfono:</strong> {cliente_telefono}</li>
-            <li><strong>Fecha cancelada:</strong> {fecha_humana}</li>
-            <li><strong>Origen:</strong> WhatsApp Automático</li>
-        </ul>
-        """
-        send_email_smtp(email_destino, asunto_interno, body_interno)
+    if origin_data and origin_data.get("cliente_email"):
+         send_email_smtp(origin_data["cliente_email"], "Cita Cancelada", f"Hola {cliente_nombre}, tu cita del {fecha_humana} ha sido cancelada.")
+         
