@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   api:
-    image: 810129/retell-api:latest 
+    image: 810129/retell-api:latest
     # En Swarm se recomienda usar redes externas para comunicación entre stacks
     volumes:
       - ./credentials:/app/credentials

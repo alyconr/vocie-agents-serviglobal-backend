@@ -39,7 +39,7 @@ jobs:
           
           # 2. Construir la imagen localmente (Solución al error de 'build' en Swarm)
           # Usamos un nombre fijo que coincida con tu docker-compose.yml
-          sudo docker build -t retell-api-local:latest .
+          sudo docker build -t 810129/retell-api:latest .
           
           # 3. Desplegar el Stack en modo Swarm
           # Esto actualizará los servicios existentes sin tirar toda la infraestructura
