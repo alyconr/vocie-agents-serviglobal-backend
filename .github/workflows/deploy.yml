@@ -13,7 +13,6 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v2
 
-
     - name: Copy files via SCP
       uses: appleboy/scp-action@master
       with:
@@ -22,9 +21,8 @@ jobs:
         key: ${{ secrets.SSH_PRIVATE_KEY }}
         source: "." 
         target: "/home/ubuntu/retell-backend"
-        rm: false    # No borra lo que ya estaba (útil para logs)
+        rm: false
 
-  
     - name: Execute remote commands via SSH
       uses: appleboy/ssh-action@master
       with:
@@ -34,17 +32,18 @@ jobs:
         script: |
           cd /home/ubuntu/retell-backend
           
-          # A. Reconstruir el archivo .env con el secreto de GitHub
+          # 1. Reconstruir archivos de configuración
           echo "${{ secrets.ENV_FILE }}" > .env
-          
-          # B. Reconstruir la carpeta de credenciales y el JSON
           mkdir -p credentials
           echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials/client_demo.json
           
-          # C. Reiniciar Docker para aplicar cambios
-          # Bajamos y subimos para asegurar que tome cambios de configuración
-          sudo docker compose down
-          sudo docker compose up -d --build
+          # 2. Construir la imagen localmente (Solución al error de 'build' en Swarm)
+          # Usamos un nombre fijo que coincida con tu docker-compose.yml
+          sudo docker build -t retell-api-local:latest .
           
-          # D. Limpieza de imágenes viejas (para no llenar el disco)
+          # 3. Desplegar el Stack en modo Swarm
+          # Esto actualizará los servicios existentes sin tirar toda la infraestructura
+          sudo docker stack deploy -c docker-compose.yml retell
+          
+          # 4. Limpieza de imágenes huérfanas para ahorrar espacio en disco
           sudo docker image prune -f
