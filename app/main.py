@@ -6,6 +6,15 @@ import os
 
 app = FastAPI()
 
+# --- RUTAS DE SALUD (Health Check) ---
+@app.get("/")
+def home():
+    return {"status": "online", "message": "Voice Agent Backend is running"}
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
 # Token de verificación que configurarás en el panel de Meta
 VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "inmobiliaria_token_secreto")
 
