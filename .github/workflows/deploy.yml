@@ -1,49 +1,50 @@
 name: Deploy to AWS Production
 
 on:
+  workflow_dispatch:
   push:
     branches:
-      - main  
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
+      - name: Checkout code
+        uses: actions/checkout@v2
 
-    - name: Copy files via SCP
-      uses: appleboy/scp-action@master
-      with:
-        host: ${{ secrets.HOST }}
-        username: ${{ secrets.USERNAME }}
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        source: "." 
-        target: "/home/ubuntu/retell-backend"
-        rm: false
+      - name: Copy files via SCP
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "."
+          target: "/home/ubuntu/retell-backend"
+          rm: false
 
-    - name: Execute remote commands via SSH
-      uses: appleboy/ssh-action@master
-      with:
-        host: ${{ secrets.HOST }}
-        username: ${{ secrets.USERNAME }}
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        script: |
-          cd /home/ubuntu/retell-backend
-          
-          # 1. Reconstruir archivos de configuración
-          echo "${{ secrets.ENV_FILE }}" > .env
-          mkdir -p credentials
-          echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials/client_demo.json
-          
-          # 2. Construir la imagen localmente (Solución al error de 'build' en Swarm)
-          # Usamos un nombre fijo que coincida con tu docker-compose.yml
-          sudo docker build -t 810129/retell-api:latest .
-          
-          # 3. Desplegar el Stack en modo Swarm
-          # Esto actualizará los servicios existentes sin tirar toda la infraestructura
-          sudo docker stack deploy -c docker-compose.yml retell
-          
-          # 4. Limpieza de imágenes huérfanas para ahorrar espacio en disco
-          sudo docker image prune -f
+      - name: Execute remote commands via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /home/ubuntu/retell-backend
+
+            # 1. Reconstruir archivos de configuración
+            echo "${{ secrets.ENV_FILE }}" > .env
+            mkdir -p credentials
+            echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials/client_demo.json
+
+            # 2. Construir la imagen localmente (Solución al error de 'build' en Swarm)
+            # Usamos un nombre fijo que coincida con tu docker-compose.yml
+            sudo docker build -t 810129/retell-api:latest .
+
+            # 3. Desplegar el Stack en modo Swarm
+            # Esto actualizará los servicios existentes sin tirar toda la infraestructura
+            sudo docker stack deploy -c docker-compose.yml retell
+
+            # 4. Limpieza de imágenes huérfanas para ahorrar espacio en disco
+            sudo docker image prune -f
