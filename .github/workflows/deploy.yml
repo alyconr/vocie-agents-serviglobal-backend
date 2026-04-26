@@ -42,17 +42,10 @@ jobs:
             # Usamos un nombre fijo que coincida con tu docker-compose.yml
             sudo docker build -t 810129/retell-api:latest .
 
-            # 3. Cargar variables de entorno del .env para que Docker Swarm las use
-            # (Docker Swarm NO lee .env automáticamente como Docker Compose)
-            set -a
-            source .env
-            set +a
+            # 3. Desplegar el Stack en modo Swarm
+            sudo docker stack deploy -c docker-compose.yml retell
 
-            # 4. Desplegar el Stack en modo Swarm
-            # Esto actualizará los servicios existentes sin tirar toda la infraestructura
-            sudo -E docker stack deploy -c docker-compose.yml retell
-
-            # 4.1 Actualizar servicio de retell
+            # 3.1 Actualizar servicio de retell
             sudo docker service update --force retell_api
             # 4. Limpieza de imágenes huérfanas para ahorrar espacio en disco
             sudo docker image prune -f
