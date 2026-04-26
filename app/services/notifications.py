@@ -1,11 +1,14 @@
 import httpx
 import smtplib
 import os
+import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 import locale
 from app.config import GLOBAL_WA_TOKEN, GLOBAL_WA_PHONE_ID, TENANTS
+
+logger = logging.getLogger(__name__)
 from dotenv import load_dotenv
 
 # Importar inventory para buscar emails de asesores si es necesario
@@ -44,27 +47,36 @@ async def notify_all_parties(agent_id: str, data: dict):
     except:
         pass
 
+    # Registro de resultados para resumen final
+    resultados = []
+
     # --- 1. WHATSAPP (CONFIRMACIÓN) ---
     if token and phone_id:
         if cliente_telefono:
-            # Plantilla sugerida: cita_confirmada_cliente
-            # Variables: {{1}}=Nombre, {{2}}=Fecha, {{3}}=Asesor, {{4}}=Propiedad
-            await send_whatsapp(
+            ok = await send_whatsapp(
                 to=cliente_telefono,
                 template="cita_confirmada_cliente",
                 params=[cliente_nombre, fecha_humana, asesor_nombre, propiedad],
                 token=token,
                 phone_id=phone_id
             )
-        
+            resultados.append(("WA→Cliente", cliente_telefono, ok))
+        else:
+            resultados.append(("WA→Cliente", "SIN NÚMERO", False))
+
         if tenant.get("owner_phone"):
-            await send_whatsapp(
+            ok = await send_whatsapp(
                 to=tenant["owner_phone"],
                 template="alerta_nuevo_lead_owner",
                 params=[tenant["name"], cliente_nombre, cliente_telefono, fecha_humana, propiedad],
                 token=token,
                 phone_id=phone_id
             )
+            resultados.append(("WA→Owner", tenant["owner_phone"], ok))
+    else:
+        logger.warning("⚠️ WHATSAPP NO CONFIGURADO: Falta WHATSAPP_TOKEN o WHATSAPP_PHONE_ID")
+        resultados.append(("WA→Cliente", "NO CONFIG", False))
+        resultados.append(("WA→Owner", "NO CONFIG", False))
 
     # --- 2. EMAILS ---
     asunto = f"Confirmación Cita: {propiedad} - {fecha_humana}"
@@ -80,37 +92,52 @@ async def notify_all_parties(agent_id: str, data: dict):
     """
 
     if cliente_email and "@" in cliente_email:
-        send_email_smtp(cliente_email, asunto, mensaje_html)
+        ok = send_email_smtp(cliente_email, asunto, mensaje_html)
+        resultados.append(("Email→Cliente", cliente_email, ok))
 
     if asesor_email and "@" in asesor_email:
-        send_email_smtp(asesor_email, f"🔔 NUEVA CITA: {cliente_nombre}", mensaje_html)
+        ok = send_email_smtp(asesor_email, f"🔔 NUEVA CITA: {cliente_nombre}", mensaje_html)
+        resultados.append(("Email→Asesor", asesor_email, ok))
 
     owner_email = tenant.get("owner_email")
     if owner_email and owner_email != asesor_email:
-        send_email_smtp(owner_email, f"🔔 NUEVA CITA: {cliente_nombre}", mensaje_html)
+        ok = send_email_smtp(owner_email, f"🔔 NUEVA CITA: {cliente_nombre}", mensaje_html)
+        resultados.append(("Email→Owner", owner_email, ok))
+
+    # --- RESUMEN FINAL ---
+    print("\n" + "=" * 55)
+    print("📊 RESUMEN NOTIFICACIONES - NUEVA CITA")
+    print(f"   Cliente: {cliente_nombre} | Tel: {cliente_telefono}")
+    print("-" * 55)
+    for canal, destino, exito in resultados:
+        estado = "✅ OK" if exito else "❌ FALLÓ"
+        print(f"   {estado} | {canal} → {destino}")
+    print("=" * 55 + "\n")
 
 
-async def send_whatsapp(to: str, template: str, params: list, token: str, phone_id: str):
+async def send_whatsapp(to: str, template: str, params: list, token: str, phone_id: str) -> bool:
     """
-    Envía mensaje con LOGS DETALLADOS para depuración.
+    Envía mensaje de plantilla WhatsApp. Retorna True si fue exitoso, False si falló.
     """
-    if not to: return
+    if not to:
+        logger.warning("⚠️ WA: Número destino vacío, no se envía.")
+        return False
 
     url = f"https://graph.facebook.com/v21.0/{phone_id}/messages"
     headers = {
-        "Authorization": f"Bearer {token}", 
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
-    
-    to_clean = to.replace("+", "").replace(" ", "").strip() 
-    
+
+    to_clean = to.replace("+", "").replace(" ", "").strip()
+
     payload = {
         "messaging_product": "whatsapp",
         "to": to_clean,
         "type": "template",
         "template": {
             "name": template,
-            "language": {"code": "es_CO"}, # Verifica si tu plantilla es es_CO o es
+            "language": {"code": "es_CO"},
             "components": [
                 {
                     "type": "body",
@@ -120,35 +147,43 @@ async def send_whatsapp(to: str, template: str, params: list, token: str, phone_
         }
     }
 
-    print(f"📤 Enviando WA a {to_clean} | Template: {template} | Params: {params}")
+    print(f"📤 WA Enviando a {to_clean} | Template: {template} | Params: {params}")
 
     async with httpx.AsyncClient() as client:
         try:
             response = await client.post(url, json=payload, headers=headers)
-            
-            # --- DEBUGGING: ESTO TE DIRÁ POR QUÉ FALLA ---
+
             if response.status_code in [200, 201]:
-                print(f"✅ WA Enviado OK. ID: {response.json().get('messages', [{}])[0].get('id')}")
+                msg_id = response.json().get('messages', [{}])[0].get('id', 'N/A')
+                print(f"✅ WA OK → {to_clean} | Template: {template} | MsgID: {msg_id}")
+                return True
             else:
-                print(f"❌ ERROR META ({response.status_code}): {response.text}")
-                
+                error_body = response.text
+                print(f"❌ WA FALLÓ → {to_clean} | Template: {template} | HTTP {response.status_code} | Error: {error_body}")
+                return False
+
         except Exception as e:
-            print(f"❌ Error conexión HTTP WhatsApp: {e}")
+            print(f"❌ WA EXCEPCIÓN → {to_clean} | Template: {template} | {type(e).__name__}: {e}")
+            return False
 
 
-def send_email_smtp(to_email, subject, body_html):
+def send_email_smtp(to_email, subject, body_html) -> bool:
+    """Envía email por SMTP. Retorna True si fue exitoso, False si falló."""
     smtp_server = os.getenv("SMTP_HOST", "smtp.gmail.com")
     port_env = os.getenv("SMTP_PORT")
     try:
         smtp_port = int(port_env) if port_env and port_env.strip() else 587
     except:
         smtp_port = 587
-        
+
     smtp_user = os.getenv("SMTP_EMAIL")
     smtp_pass = os.getenv("SMTP_PASSWORD")
 
     if not smtp_user or not smtp_pass:
-        return
+        print(f"❌ EMAIL NO CONFIGURADO: Faltan SMTP_EMAIL o SMTP_PASSWORD → No se envió a {to_email}")
+        return False
+
+    print(f"📧 EMAIL Enviando a {to_email} | Asunto: {subject} | Via: {smtp_server}:{smtp_port}")
 
     try:
         msg = MIMEMultipart()
@@ -162,9 +197,14 @@ def send_email_smtp(to_email, subject, body_html):
         server.login(smtp_user, smtp_pass)
         server.send_message(msg)
         server.quit()
-        print(f"📧 Email enviado a {to_email}")
+        print(f"✅ EMAIL OK → {to_email}")
+        return True
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"❌ EMAIL AUTH FALLÓ → {to_email} | Error: {e}")
+        return False
     except Exception as e:
-        print(f"❌ Error SMTP: {e}")
+        print(f"❌ EMAIL FALLÓ → {to_email} | {type(e).__name__}: {e}")
+        return False
 
 
 async def notify_cancellation(agent_id: str, cancel_data: dict, origin_data: dict = None):
@@ -199,45 +239,43 @@ async def notify_cancellation(agent_id: str, cancel_data: dict, origin_data: dic
         except:
             pass
             
+    resultados = []
+
     # --- 1. WHATSAPP ---
     if token and phone_id:
-        # A. Al Cliente
         if cliente_telefono:
-            # Asegúrate que tu plantilla 'cita_cancelada_cliente' acepte 2 variables
-            await send_whatsapp(
+            ok = await send_whatsapp(
                 to=cliente_telefono,
-                template="cita_cancelada_cliente", 
+                template="cita_cancelada_cliente",
                 params=[cliente_nombre, fecha_humana],
                 token=token,
                 phone_id=phone_id
             )
-        
-        # B. Al Dueño
+            resultados.append(("WA→Cliente", cliente_telefono, ok))
+
         if tenant.get("owner_phone"):
-            # Asegúrate que 'alerta_cancelacion_owner' acepte 3 variables
-            await send_whatsapp(
+            ok = await send_whatsapp(
                 to=tenant["owner_phone"],
                 template="alerta_cancelacion_owner",
                 params=[cliente_nombre, fecha_humana, propiedad],
                 token=token,
                 phone_id=phone_id
             )
-    
+            resultados.append(("WA→Owner", tenant["owner_phone"], ok))
+
     # --- 2. EMAILS ---
-    # Buscar email real del asesor usando el ID del calendario
     asesor_email = None
     cal_id = cancel_data.get("asesor_calendario_origen")
-    
+
     if cal_id:
         asesor_email = await inventory.get_advisor_email_by_calendar(agent_id, cal_id)
-        # Si no lo encuentra en inventario, pero el ID parece un email personal
         if not asesor_email and "@" in cal_id and "group.calendar.google.com" not in cal_id:
             asesor_email = cal_id
 
     destinatarios = set()
     if tenant.get("owner_email"): destinatarios.add(tenant["owner_email"])
     if asesor_email: destinatarios.add(asesor_email)
-    
+
     body_interno = f"""
     <h3>Cita Cancelada</h3>
     <ul>
@@ -247,10 +285,21 @@ async def notify_cancellation(agent_id: str, cancel_data: dict, origin_data: dic
         <li><strong>Fecha original:</strong> {fecha_humana}</li>
     </ul>
     """
-    
+
     for email in destinatarios:
-        send_email_smtp(email, f"🚫 CANCELACIÓN: {cliente_nombre}", body_interno)
-        
+        ok = send_email_smtp(email, f"🚫 CANCELACIÓN: {cliente_nombre}", body_interno)
+        resultados.append(("Email→Equipo", email, ok))
+
     if origin_data and origin_data.get("cliente_email"):
-         send_email_smtp(origin_data["cliente_email"], "Cita Cancelada", f"Hola {cliente_nombre}, tu cita del {fecha_humana} ha sido cancelada.")
-         
+        ok = send_email_smtp(origin_data["cliente_email"], "Cita Cancelada", f"Hola {cliente_nombre}, tu cita del {fecha_humana} ha sido cancelada.")
+        resultados.append(("Email→Cliente", origin_data["cliente_email"], ok))
+
+    # --- RESUMEN FINAL ---
+    print("\n" + "=" * 55)
+    print("📊 RESUMEN NOTIFICACIONES - CANCELACIÓN")
+    print(f"   Cliente: {cliente_nombre} | Tel: {cliente_telefono}")
+    print("-" * 55)
+    for canal, destino, exito in resultados:
+        estado = "✅ OK" if exito else "❌ FALLÓ"
+        print(f"   {estado} | {canal} → {destino}")
+    print("=" * 55 + "\n")
