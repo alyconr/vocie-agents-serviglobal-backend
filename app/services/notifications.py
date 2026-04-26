@@ -102,7 +102,7 @@ async def send_whatsapp(to: str, template: str, params: list, token: str, phone_
         "Content-Type": "application/json"
     }
     
-    to_clean = to.replace("+", "").replace(" ", "").strip()
+    to_clean = to.replace("+", "").replace(" ", "").strip() 
     
     payload = {
         "messaging_product": "whatsapp",

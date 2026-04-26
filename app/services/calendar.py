@@ -31,7 +31,7 @@ async def check_availability(
     try:
         service = get_service("calendar", "v3", tenant["creds_file"])
         target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-        start_of_day = BOGOTA_TZ.localize(
+        start_of_day = BOGOTA_TZ.localize( 
             datetime.combine(target_date, datetime.min.time().replace(hour=8))
         )
         end_of_day = BOGOTA_TZ.localize(
