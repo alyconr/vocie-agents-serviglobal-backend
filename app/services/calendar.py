@@ -3,7 +3,7 @@ import pytz
 from app.config import TENANTS
 from app.core.google_auth import get_service
 
-# Importamos el módulo de inventario para obtener los calendarios de asesores
+# Importamos el módulo de inventario para obtener los calendarios de asesores inmobilirios
 from app.services import inventory
 
 BOGOTA_TZ = pytz.timezone("America/Bogota")
